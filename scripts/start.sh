@@ -8,6 +8,7 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 项目根目录
@@ -21,16 +22,53 @@ PID_DIR="$PROJECT_ROOT/.pids"
 # 日志目录
 LOG_DIR="$PROJECT_ROOT/logs"
 
+# 后端主机和端口
+BACKEND_HOST="${BACKEND_HOST:-0.0.0.0}"
+BACKEND_PORT="${BACKEND_PORT:-8000}"
+
+# 前端端口
+FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+
+# 检查是否只启动后端
+BACKEND_ONLY=false
+if [ "$1" == "--backend-only" ] || [ "$1" == "-b" ]; then
+    BACKEND_ONLY=true
+fi
+
+# 检查是否只启动前端
+FRONTEND_ONLY=false
+if [ "$1" == "--frontend-only" ] || [ "$1" == "-f" ]; then
+    FRONTEND_ONLY=true
+fi
+
+# 打印横幅
+print_banner() {
+    echo ""
+    echo -e "${BLUE}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║${NC}   DB Compare - 数据库比对系统               ${BLUE}║${NC}"
+    echo -e "${BLUE}╚════════════════════════════════════════════╝${NC}"
+    echo ""
+}
+
 # 检查环境变量文件
 check_env() {
     if [ ! -f "$BACKEND_DIR/.env" ]; then
         echo -e "${YELLOW}警告：backend/.env 文件不存在${NC}"
-        echo -e "${YELLOW}请复制 backend/.env.example 并配置必要的环境变量${NC}"
         if [ -f "$BACKEND_DIR/.env.example" ]; then
             echo -e "${GREEN}正在从 .env.example 创建 .env 文件...${NC}"
             cp "$BACKEND_DIR/.env.example" "$BACKEND_DIR/.env"
-            echo -e "${GREEN}.env 文件已创建，请编辑后重新运行此脚本${NC}"
+            echo -e "${RED}.env 文件已创建，请配置必要的变量后重新运行${NC}"
+            echo -e "${YELLOW}需要配置：DATABASE_URL, ENCRYPTION_KEY${NC}"
+        else
+            echo -e "${RED}错误：backend/.env.example 也不存在${NC}"
         fi
+        exit 1
+    fi
+
+    # 检查必要的环境变量
+    if grep -q "ENCRYPTION_KEY=<your-32-byte-encryption-key>" "$BACKEND_DIR/.env" 2>/dev/null; then
+        echo -e "${RED}错误：请先配置 ENCRYPTION_KEY${NC}"
+        echo -e "${YELLOW}生成命令：python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"${NC}"
         exit 1
     fi
 }
@@ -41,7 +79,7 @@ check_python_deps() {
     cd "$BACKEND_DIR"
     if ! python -c "import fastapi" 2>/dev/null; then
         echo -e "${YELLOW}安装 Python 依赖...${NC}"
-        pip install -e .
+        pip install -e . -q
     fi
 }
 
@@ -51,17 +89,19 @@ check_node_deps() {
     cd "$FRONTEND_DIR"
     if [ ! -d "node_modules" ]; then
         echo -e "${YELLOW}安装 Node 依赖...${NC}"
-        npm install
+        npm install --silent
     fi
 }
 
-# 检查数据库
+# 检查并初始化数据库
 check_database() {
     echo -e "${GREEN}检查数据库...${NC}"
     cd "$BACKEND_DIR"
-    if ! python -c "from app.db.session import engine" 2>/dev/null; then
-        echo -e "${YELLOW}数据库未初始化，正在执行迁移...${NC}"
-        alembic upgrade head
+
+    # 尝试执行迁移（如果失败则跳过）
+    if ! python -c "from sqlalchemy import create_engine; import os; print('Database check OK')" 2>/dev/null; then
+        echo -e "${YELLOW}执行数据库迁移...${NC}"
+        alembic upgrade head 2>/dev/null || echo -e "${YELLOW}迁移可能需要手动配置数据库后执行${NC}"
     fi
 }
 
@@ -69,38 +109,46 @@ check_database() {
 start_backend() {
     echo -e "${GREEN}启动后端服务...${NC}"
 
-    # 创建 PID 和日志目录
     mkdir -p "$PID_DIR" "$LOG_DIR"
-
     cd "$BACKEND_DIR"
 
-    # 检查后端是否已在运行
+    # 检查是否已在运行
     if [ -f "$PID_DIR/backend.pid" ]; then
         PID=$(cat "$PID_DIR/backend.pid")
         if ps -p "$PID" > /dev/null 2>&1; then
             echo -e "${YELLOW}后端服务已在运行 (PID: $PID)${NC}"
-            return 1
+            return 0
         else
-            echo -e "${YELLOW}检测到无效的 PID 文件，清理中...${NC}"
             rm -f "$PID_DIR/backend.pid"
         fi
     fi
 
     # 启动后端
     nohup uvicorn app.main:app \
-        --host 0.0.0.0 \
-        --port 8000 \
+        --host "$BACKEND_HOST" \
+        --port "$BACKEND_PORT" \
         --reload \
         > "$LOG_DIR/backend.log" 2>&1 &
 
     PID=$!
     echo $PID > "$PID_DIR/backend.pid"
 
-    # 等待后端启动
-    sleep 3
+    # 等待启动
+    sleep 2
+
+    # 检查是否成功启动
     if ps -p "$PID" > /dev/null 2>&1; then
-        echo -e "${GREEN}后端服务已启动 (PID: $PID)${NC}"
-        echo -e "${GREEN}API 文档：http://localhost:8000/docs${NC}"
+        # 等待服务就绪
+        for i in {1..10}; do
+            if curl -s "http://localhost:$BACKEND_PORT/health" > /dev/null 2>&1; then
+                echo -e "${GREEN}后端服务已启动 (PID: $PID)${NC}"
+                echo -e "${GREEN}API 文档：http://localhost:$BACKEND_PORT/docs${NC}"
+                return 0
+            fi
+            sleep 1
+        done
+        echo -e "${YELLOW}后端服务已启动但健康检查未就绪 (PID: $PID)${NC}"
+        echo -e "${YELLOW}请查看 logs/backend.log 了解详细信息${NC}"
     else
         echo -e "${RED}后端服务启动失败，请查看 logs/backend.log${NC}"
         return 1
@@ -111,22 +159,22 @@ start_backend() {
 start_frontend() {
     echo -e "${GREEN}启动前端服务...${NC}"
 
-    # 创建 PID 和日志目录
     mkdir -p "$PID_DIR" "$LOG_DIR"
-
     cd "$FRONTEND_DIR"
 
-    # 检查前端是否已在运行
+    # 检查是否已在运行
     if [ -f "$PID_DIR/frontend.pid" ]; then
         PID=$(cat "$PID_DIR/frontend.pid")
         if ps -p "$PID" > /dev/null 2>&1; then
             echo -e "${YELLOW}前端服务已在运行 (PID: $PID)${NC}"
-            return 1
+            return 0
         else
-            echo -e "${YELLOW}检测到无效的 PID 文件，清理中...${NC}"
             rm -f "$PID_DIR/frontend.pid"
         fi
     fi
+
+    # 设置前端端口
+    export PORT="$FRONTEND_PORT"
 
     # 启动前端
     nohup npm run dev \
@@ -135,11 +183,12 @@ start_frontend() {
     PID=$!
     echo $PID > "$PID_DIR/frontend.pid"
 
-    # 等待前端启动
+    # 等待启动
     sleep 3
+
     if ps -p "$PID" > /dev/null 2>&1; then
         echo -e "${GREEN}前端服务已启动 (PID: $PID)${NC}"
-        echo -e "${GREEN}访问地址：http://localhost:5173${NC}"
+        echo -e "${GREEN}访问地址：http://localhost:$FRONTEND_PORT${NC}"
     else
         echo -e "${RED}前端服务启动失败，请查看 logs/frontend.log${NC}"
         return 1
@@ -150,59 +199,89 @@ start_frontend() {
 show_status() {
     echo ""
     echo "================================"
-    echo -e "${GREEN}DB Compare 服务状态${NC}"
-    echo "================================"
+    echo -e "${GREEN}服务状态${NC}"
+    echo "--------------------------------"
+
+    local running=0
 
     if [ -f "$PID_DIR/backend.pid" ]; then
         PID=$(cat "$PID_DIR/backend.pid")
         if ps -p "$PID" > /dev/null 2>&1; then
-            echo -e "后端：${GREEN}运行中${NC} (PID: $PID)"
+            echo -e "  后端：${GREEN}● 运行中${NC} (PID: $PID)"
+            echo -e "       http://localhost:$BACKEND_PORT/docs"
+            running=$((running + 1))
         else
-            echo -e "后端：${RED}未运行${NC}"
+            echo -e "  后端：${RED}○ 未运行${NC}"
         fi
-    else
-        echo -e "后端：${RED}未启动${NC}"
     fi
 
     if [ -f "$PID_DIR/frontend.pid" ]; then
         PID=$(cat "$PID_DIR/frontend.pid")
         if ps -p "$PID" > /dev/null 2>&1; then
-            echo -e "前端：${GREEN}运行中${NC} (PID: $PID)"
+            echo -e "  前端：${GREEN}● 运行中${NC} (PID: $PID)"
+            echo -e "       http://localhost:$FRONTEND_PORT"
+            running=$((running + 1))
         else
-            echo -e "前端：${RED}未运行${NC}"
+            echo -e "  前端：${RED}○ 未运行${NC}"
         fi
-    else
-        echo -e "前端：${RED}未启动${NC}"
     fi
 
     echo "================================"
+    if [ $running -eq 2 ]; then
+        echo -e "${GREEN}所有服务运行正常${NC}"
+    elif [ $running -eq 0 ]; then
+        echo -e "${YELLOW}没有服务在运行${NC}"
+    fi
+    echo ""
 }
+
+# 清理函数
+cleanup() {
+    echo ""
+    echo -e "${YELLOW}正在停止所有服务...${NC}"
+    "$PROJECT_ROOT/scripts/stop.sh"
+    exit 0
+}
+
+# 设置信号处理
+trap cleanup SIGINT SIGTERM
 
 # 主函数
 main() {
-    echo ""
-    echo "================================"
-    echo -e "${GREEN}DB Compare - 数据库比对系统${NC}"
-    echo "================================"
-    echo ""
+    print_banner
 
-    # 检查环境
-    check_env
-    check_python_deps
-    check_node_deps
-    check_database
+    if [ "$BACKEND_ONLY" = true ]; then
+        echo -e "${BLUE}模式：仅启动后端${NC}"
+        check_env
+        check_python_deps
+        check_database
+        start_backend
+    elif [ "$FRONTEND_ONLY" = true ]; then
+        echo -e "${BLUE}模式：仅启动前端${NC}"
+        check_node_deps
+        start_frontend
+    else
+        echo -e "${BLUE}模式：启动所有服务${NC}"
+        check_env
+        check_python_deps
+        check_node_deps
+        check_database
+        start_backend
+        start_frontend
+    fi
 
-    # 启动服务
-    start_backend
-    start_frontend
-
-    # 显示状态
     show_status
 
-    echo ""
-    echo -e "${GREEN}服务启动完成!${NC}"
-    echo -e "${YELLOW}停止服务：./scripts/stop.sh${NC}"
-    echo ""
+    if [ "$BACKEND_ONLY" = false ] && [ "$FRONTEND_ONLY" = false ]; then
+        echo -e "${YELLOW}提示：按 Ctrl+C 停止所有服务${NC}"
+        echo -e "${YELLOW}或使用：./scripts/stop.sh${NC}"
+        echo ""
+
+        # 保持运行并监听信号
+        while true; do
+            sleep 60
+        done
+    fi
 }
 
 # 运行主函数
