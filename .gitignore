@@ -23,7 +23,6 @@ MANIFEST
 
 # Virtual environments
 venv/
-env/
 ENV/
 .venv
 
@@ -48,10 +47,6 @@ logs/
 *.sqlite
 *.sqlite3
 
-# Celery
-celerybeat-schedule
-celerybeat.pid
-
 # Testing
 .pytest_cache/
 .coverage
@@ -65,20 +60,12 @@ dmypy.json
 
 # Node / React
 node_modules/
-frontend/node_modules/
-frontend/npm-debug.log
-frontend/yarn-error.log
-frontend/dist/
-frontend/build/
-frontend/.vite/
+npm-debug.log
+yarn-error.log
+dist/
+build/
+.vite/
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Project specific
-backend/alembic/versions/002_*.py
-*.bak
-*.tmp
-../MiroFish
-../gsd

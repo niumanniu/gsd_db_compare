@@ -1,13 +1,20 @@
-# DB Compare - 数据库结构比对工具
+# DB Compare - 数据库库表比对系统
 
-一个用于比对不同数据库表结构差异的工具，支持 MySQL 和 Oracle 数据库。
+一个面向运维团队的数据库比对工具，支持 MySQL 和 Oracle 数据库，提供表结构比对和数据比对功能。
+
+## 核心价值
+
+让运维团队快速发现和验证数据库结构及数据差异，减少人工比对错误，提高变更验证效率。
 
 ## 功能特性
 
-- **数据库连接管理** - 安全存储和管理多个数据库连接配置
-- **表结构比对** - 比对字段、索引、约束的差异
-- **可视化展示** - 清晰直观的差异展示界面
-- **异步任务处理** - 使用 Celery 处理长时间运行的比对任务
+- **多数据库支持** - MySQL (5.7/8.0+)、Oracle (12c/18c/19c+)
+- **表结构比对** - 比对字段、索引、约束、默认值的差异
+- **数据比对** - 支持全量比对、抽样比对、关键表比对
+- **差异可视化** - 清晰展示结构和数据差异
+- **报告生成** - 导出 HTML/Excel 格式比对报告
+- **连接管理** - 安全存储和管理数据库连接信息
+- **定时任务** - 使用 APScheduler 支持计划任务定期执行比对
 - **密码加密** - 使用 Fernet 对称加密存储数据库密码
 
 ## 快速开始
@@ -17,7 +24,6 @@
 - Python 3.11+
 - Node.js 18+
 - PostgreSQL (存储应用数据)
-- Redis (Celery 消息队列)
 
 ### 后端设置
 
@@ -38,9 +44,6 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 # 初始化数据库
 alembic upgrade head
-
-# 启动 Celery worker
-celery -A celery_config worker --loglevel=info
 
 # 启动 API 服务
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -68,8 +71,6 @@ npm run dev
 |------|------|------|
 | DATABASE_URL | PostgreSQL 连接字符串 | postgresql://user:pass@localhost/db_compare |
 | ENCRYPTION_KEY | 密码加密密钥 (32 字节) | gAAAAABk... |
-| CELERY_BROKER_URL | Redis broker URL | redis://localhost:6379/0 |
-| CELERY_RESULT_BACKEND | Redis 结果存储 | redis://localhost:6379/1 |
 | LOG_LEVEL | 日志级别 | INFO |
 
 ### 前端 (.env)
@@ -108,6 +109,12 @@ npm run dev
 - **REMOVED (红色)** - 仅在源表中存在
 - **MODIFIED (黄色)** - 在两个表中都存在但定义不同
 
+## 约束
+
+- **只读模式** - 不执行 DDL/DML 写操作
+- **内部部署** - 数据不出内网
+- **并发限制** - 比对任务串行或小并发，避免影响生产库性能
+
 ## 项目结构
 
 ```
@@ -116,13 +123,13 @@ gsd_db_compare/
 │   ├── app/
 │   │   ├── api/          # REST API 端点
 │   │   ├── db/           # 数据库模型和会话
-│   │   ├── adapters/     # 数据库适配器
+│   │   ├── adapters/     # 数据库适配器 (MySQL/Oracle)
 │   │   ├── comparison/   # 比对引擎
 │   │   ├── schemas/      # Pydantic 模型
+│   │   ├── reports/      # 报告生成 (HTML/Excel)
 │   │   ├── main.py       # FastAPI 应用
-│   │   └── worker.py     # Celery 任务
+│   │   └── worker.py     # 定时任务
 │   ├── alembic/          # 数据库迁移
-│   ├── celery_config.py  # Celery 配置
 │   └── pyproject.toml    # Python 依赖
 ├── frontend/
 │   ├── src/
@@ -173,15 +180,25 @@ isort .
 - FastAPI - Web 框架
 - SQLAlchemy 2.0 - ORM
 - Alembic - 数据库迁移
-- Celery - 异步任务
+- APScheduler - 异步任务调度
 - Pydantic - 数据验证
+- Cryptography - 密码加密
+- MySQL Connector / OracleDB - 数据库驱动
 
 **前端**
 - React 18 - UI 框架
 - TypeScript - 类型安全
 - Ant Design - 组件库
-- React Query - 服务端状态管理
+- Zustand - 状态管理
+- TanStack Query - 服务端状态管理
+- TanStack Table - 表格处理
 - Vite - 构建工具
+
+## 目标用户
+
+- **运维工程师** - 环境变更验证、故障排查
+- **DBA** - 数据库结构审核、数据一致性检查
+- **测试人员** - 测试环境与生产环境比对
 
 ## License
 
