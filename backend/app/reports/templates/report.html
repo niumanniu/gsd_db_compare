@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Schema Comparison Report</title>
+    <style>
+        :root {
+            --color-added: #d4edda;
+            --color-added-border: #c3e6cb;
+            --color-removed: #f8d7da;
+            --color-removed-border: #f5c6cb;
+            --color-modified: #fff3cd;
+            --color-modified-border: #ffeeba;
+            --color-header: #4472C4;
+            --color-text-light: #666;
+            --color-border: #dee2e6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+
+        header {
+            border-bottom: 2px solid var(--color-header);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: var(--color-header);
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .meta-info {
+            color: var(--color-text-light);
+            font-size: 14px;
+        }
+
+        .comparison-info {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+            padding: 15px;
+            background: #e6f7ff;
+            border-radius: 8px;
+        }
+
+        .db-badge {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .db-badge-label {
+            font-size: 12px;
+            color: var(--color-text-light);
+            text-transform: uppercase;
+        }
+
+        .db-badge-value {
+            font-weight: 600;
+            color: var(--color-header);
+        }
+
+        /* Summary Cards */
+        .summary-section {
+            margin-bottom: 30px;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .summary-card {
+            background: #f8f9fa;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .summary-card.has-diffs {
+            border-left: 4px solid var(--color-header);
+        }
+
+        .summary-card .count {
+            font-size: 36px;
+            font-weight: bold;
+            color: var(--color-header);
+        }
+
+        .summary-card .label {
+            font-size: 14px;
+            color: var(--color-text-light);
+            margin-top: 5px;
+        }
+
+        /* Diff Sections */
+        .diff-section {
+            margin-bottom: 30px;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .diff-section summary {
+            padding: 15px 20px;
+            background: #f8f9fa;
+            cursor: pointer;
+            font-weight: 600;
+            list-style: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .diff-section summary:hover {
+            background: #e9ecef;
+        }
+
+        .diff-section summary::after {
+            content: '+';
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .diff-section[open] summary::after {
+            content: '-';
+        }
+
+        .diff-section summary .badge {
+            background: var(--color-header);
+            color: white;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .diff-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .diff-table th {
+            background: var(--color-header);
+            color: white;
+            font-weight: 600;
+            padding: 12px;
+            text-align: left;
+        }
+
+        .diff-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--color-border);
+            vertical-align: top;
+        }
+
+        .diff-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .diff-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        /* Diff Type Styling */
+        .diff-type {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .diff-type.added {
+            background: var(--color-added);
+            color: #155724;
+        }
+
+        .diff-type.removed {
+            background: var(--color-removed);
+            color: #721c24;
+        }
+
+        .diff-type.modified {
+            background: var(--color-modified);
+            color: #856404;
+        }
+
+        /* Value comparison */
+        .value-comparison {
+            font-size: 13px;
+        }
+
+        .value-source {
+            color: #721c24;
+            background: var(--color-removed);
+            padding: 2px 6px;
+            border-radius: 3px;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .value-target {
+            color: #155724;
+            background: var(--color-added);
+            padding: 2px 6px;
+            border-radius: 3px;
+            display: block;
+        }
+
+        .value-na {
+            color: #666;
+            font-style: italic;
+        }
+
+        /* Differences list */
+        .diff-list {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .diff-list li {
+            margin-bottom: 4px;
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--color-text-light);
+        }
+
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        /* Print styles */
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+
+            .container {
+                box-shadow: none;
+                max-width: 100%;
+            }
+
+            .diff-section {
+                break-inside: avoid;
+            }
+
+            .diff-section[open] summary {
+                border-bottom: 1px solid var(--color-border);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Database Schema Comparison Report</h1>
+            <div class="meta-info">
+                Generated: {{ generated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+            </div>
+            <div class="comparison-info">
+                <div class="db-badge">
+                    <span class="db-badge-label">Source</span>
+                    <span class="db-badge-value">{{ source_db }}</span>
+                </div>
+                <div class="db-badge">
+                    <span class="db-badge-label">Target</span>
+                    <span class="db-badge-value">{{ target_db }}</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Summary Section -->
+        <section class="summary-section">
+            <h2>Summary</h2>
+            <div class="summary-cards">
+                <div class="summary-card has-diffs">
+                    <div class="count">{{ summary.total_column_diffs }}</div>
+                    <div class="label">Column Differences</div>
+                </div>
+                <div class="summary-card has-diffs">
+                    <div class="count">{{ summary.total_index_diffs }}</div>
+                    <div class="label">Index Differences</div>
+                </div>
+                <div class="summary-card has-diffs">
+                    <div class="count">{{ summary.total_constraint_diffs }}</div>
+                    <div class="label">Constraint Differences</div>
+                </div>
+                <div class="summary-card {{ 'has-diffs' if summary.has_differences else '' }}">
+                    <div class="count">{{ summary.total_diffs }}</div>
+                    <div class="label">Total Differences</div>
+                </div>
+            </div>
+        </section>
+
+        {% if not summary.has_differences %}
+        <div class="empty-state">
+            <div class="icon">&#10004;</div>
+            <h3>No Differences Found</h3>
+            <p>The schemas are identical between source and target databases.</p>
+        </div>
+        {% endif %}
+
+        <!-- Column Differences -->
+        {% if diff.column_diffs %}
+        <details class="diff-section" open>
+            <summary>
+                Column Differences
+                <span class="badge">{{ summary.total_column_diffs }}</span>
+            </summary>
+            <table class="diff-table">
+                <thead>
+                    <tr>
+                        <th>Column</th>
+                        <th>Type</th>
+                        <th>Source</th>
+                        <th>Target</th>
+                        <th>Differences</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for col_diff in diff.column_diffs %}
+                    <tr>
+                        <td><strong>{{ col_diff.column_name }}</strong></td>
+                        <td><span class="diff-type {{ col_diff.diff_type }}">{{ col_diff.diff_type }}</span></td>
+                        <td>
+                            {% if col_diff.source_definition %}
+                                <div class="value-comparison">
+                                    {% if col_diff.source_definition.nullable is not none %}
+                                        {{ 'NULL' if col_diff.source_definition.nullable else 'NOT NULL' }}
+                                    {% endif %}
+                                    {{ col_diff.source_definition.type or 'N/A' }}
+                                </div>
+                            {% else %}
+                                <span class="value-na">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if col_diff.target_definition %}
+                                <div class="value-comparison">
+                                    {% if col_diff.target_definition.nullable is not none %}
+                                        {{ 'NULL' if col_diff.target_definition.nullable else 'NOT NULL' }}
+                                    {% endif %}
+                                    {{ col_diff.target_definition.type or 'N/A' }}
+                                </div>
+                            {% else %}
+                                <span class="value-na">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if col_diff.differences %}
+                            <ul class="diff-list">
+                                {% for item in col_diff.differences %}
+                                <li>{{ item }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
+        {% endif %}
+
+        <!-- Index Differences -->
+        {% if diff.index_diffs %}
+        <details class="diff-section">
+            <summary>
+                Index Differences
+                <span class="badge">{{ summary.total_index_diffs }}</span>
+            </summary>
+            <table class="diff-table">
+                <thead>
+                    <tr>
+                        <th>Index</th>
+                        <th>Type</th>
+                        <th>Source</th>
+                        <th>Target</th>
+                        <th>Differences</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for idx_diff in diff.index_diffs %}
+                    <tr>
+                        <td><strong>{{ idx_diff.index_name }}</strong></td>
+                        <td><span class="diff-type {{ idx_diff.diff_type }}">{{ idx_diff.diff_type }}</span></td>
+                        <td>
+                            {% if idx_diff.source_definition %}
+                                <div class="value-comparison">
+                                    {{ idx_diff.source_definition.columns | join(', ') if idx_diff.source_definition.columns else 'N/A' }}
+                                    {% if idx_diff.source_definition.unique %}(UNIQUE){% endif %}
+                                </div>
+                            {% else %}
+                                <span class="value-na">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if idx_diff.target_definition %}
+                                <div class="value-comparison">
+                                    {{ idx_diff.target_definition.columns | join(', ') if idx_diff.target_definition.columns else 'N/A' }}
+                                    {% if idx_diff.target_definition.unique %}(UNIQUE){% endif %}
+                                </div>
+                            {% else %}
+                                <span class="value-na">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if idx_diff.differences %}
+                            <ul class="diff-list">
+                                {% for item in idx_diff.differences %}
+                                <li>{{ item }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
+        {% endif %}
+
+        <!-- Constraint Differences -->
+        {% if diff.constraint_diffs %}
+        <details class="diff-section">
+            <summary>
+                Constraint Differences
+                <span class="badge">{{ summary.total_constraint_diffs }}</span>
+            </summary>
+            <table class="diff-table">
+                <thead>
+                    <tr>
+                        <th>Constraint</th>
+                        <th>Type</th>
+                        <th>Diff Type</th>
+                        <th>Source</th>
+                        <th>Target</th>
+                        <th>Differences</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cons_diff in diff.constraint_diffs %}
+                    <tr>
+                        <td><strong>{{ cons_diff.constraint_name }}</strong></td>
+                        <td>{{ cons_diff.constraint_type }}</td>
+                        <td><span class="diff-type {{ cons_diff.diff_type }}">{{ cons_diff.diff_type }}</span></td>
+                        <td>
+                            {% if cons_diff.source_definition %}
+                                <div class="value-comparison">
+                                    {{ cons_diff.source_definition.columns | join(', ') if cons_diff.source_definition.columns else 'N/A' }}
+                                </div>
+                            {% else %}
+                                <span class="value-na">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if cons_diff.target_definition %}
+                                <div class="value-comparison">
+                                    {{ cons_diff.target_definition.columns | join(', ') if cons_diff.target_definition.columns else 'N/A' }}
+                                </div>
+                            {% else %}
+                                <span class="value-na">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if cons_diff.differences %}
+                            <ul class="diff-list">
+                                {% for item in cons_diff.differences %}
+                                <li>{{ item }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </details>
+        {% endif %}
+    </div>
+</body>
+</html>

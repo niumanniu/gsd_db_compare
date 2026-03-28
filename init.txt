@@ -1,0 +1,16 @@
+# 1. 进入正确的项目目录
+cd /Volumes/extern/claude_workspace/gsd_db_compare
+
+# 2. 初始化新仓库
+git init
+
+# 3. 添加 .gitignore（先确认有）
+cat .gitignore
+
+# 4. 添加文件并提交
+git add .
+git commit -m "init: gsd_db_compare project"
+
+# 5. 关联远程仓库并推送
+git remote add origin https://github.com/niumanniu/gsd_db_compare.git
+git push origin main --force
