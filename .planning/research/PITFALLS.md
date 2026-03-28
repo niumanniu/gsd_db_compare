@@ -1,429 +1,558 @@
-# Domain Pitfalls: DB Compare
+# Domain Pitfalls: Schema Selection & Multi-Mode Comparison
 
-**Researched:** 2026-03-28
-
-## Critical Pitfalls (Must Avoid)
-
-### Pitfall 1: Metadata Query Performance Degradation
-
-**Problem:**
-Querying `information_schema` on MySQL or `ALL_TAB_*` views on Oracle with 10,000+ tables can take 30+ seconds if not properly filtered.
-
-**Impact:**
-- UI appears frozen
-- Connection timeout errors
-- Poor first-time user experience
-
-**Prevention:**
-```sql
--- BAD: Fetch all tables
-SELECT * FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'your_db';
-
--- GOOD: Fetch only requested tables
-SELECT * FROM information_schema.COLUMNS
-WHERE TABLE_SCHEMA = 'your_db'
-  AND TABLE_NAME IN ('table1', 'table2', 'table3');
-
--- BETTER: Paginate for table browser
-SELECT * FROM information_schema.COLUMNS
-WHERE TABLE_SCHEMA = 'your_db'
-ORDER BY TABLE_NAME
-LIMIT 100 OFFSET 0;
-```
-
-**Phase:** Phase 1
+**Domain:** Database Comparison Tools — Adding Schema Selection UI and Multi-Mode Comparison
+**Researched:** 2026-03-29
+**Context:** Adding schema selection dropdown for database-level comparison and single/multi/database-level comparison modes to existing DB Compare application
 
 ---
 
-### Pitfall 2: Memory Exhaustion on Large Table Comparison
+## Overview
 
-**Problem:**
-Loading entire table data into memory for comparison causes OOM (Out Of Memory) errors on tables with millions of rows.
+This document focuses on pitfalls **specific to adding schema selection UI and multi-mode comparison features** to the existing DB Compare application. General database comparison pitfalls (type mapping, NULL handling, etc.) are covered in the original PITFALLS.md.
 
-**Impact:**
-- Application crashes
-- Comparison fails silently
-- Unreliable for production use cases
+---
+
+## Critical Pitfalls
+
+### Pitfall 1: Schema Enumeration Performance on Large Databases
+
+**What goes wrong:** When implementing schema selection dropdowns, the naive approach fetches ALL schemas/tables upfront on connection change. Databases with hundreds of schemas (common in multi-tenant SaaS, legacy systems) cause:
+- UI freeze during dropdown render (Ant Design Select with 500+ options)
+- Network timeout on metadata fetch (default 30s may not be enough)
+- Memory bloat storing full schema list in React state
+
+**Why it happens:**
+- Current `get_tables()` API returns complete table list without pagination
+- `TableBrowser.tsx` loads all tables into `sourceTables`/`targetTables` state
+- No search-as-you-type or virtualization for large lists
+
+**Consequences:**
+- Users with 1000+ tables experience 5-10 second delays
+- Browser tab may crash with 5000+ tables
+- Comparison workflow blocked until metadata loads
+
+**Prevention:**
+```typescript
+// Use virtual scrolling for large table lists
+<Select
+  showSearch
+  filterOption={(input, option) =>
+    (option?.children ?? '').toLowerCase().includes(input.toLowerCase())
+  }
+  listHeight={400}  // Fixed dropdown height
+  // Consider react-window for 1000+ items
+/>
+```
+
+**Backend prevention:**
+```python
+# Add pagination/limit to get_tables endpoint
+@router.get("/{conn_id}/tables")
+async def get_connection_tables(
+    conn_id: int,
+    limit: int = 500,  # Default cap
+    search: str = "",  # Optional filter
+    ...
+):
+    tables = adapter.get_tables()
+    if search:
+        tables = [t for t in tables if search.lower() in t['table_name'].lower()]
+    return tables[:limit]
+```
+
+**Detection:**
+- Add performance monitoring: `performance.measure()` around table fetch
+- Show warning when table count exceeds 100
+- Display loading indicator with table count during fetch
+
+**Phase:** Phase 1 - Schema Selection UI
+
+---
+
+### Pitfall 2: Cross-Database Schema Name Case Sensitivity
+
+**What goes wrong:** MySQL schema names are case-sensitive on Linux, case-insensitive on Windows. Oracle schema names are typically uppercase. When users select schemas from dropdown:
+- Selected schema name doesn't match actual schema in queries
+- Table comparisons fail silently with "table not found"
+- Cross-database comparisons (MySQL ↔ Oracle) break on schema reference
+
+**Why it happens:**
+- Current `get_tables()` returns schema names as-is from database
+- No normalization of schema identifiers before comparison
+- `information_schema.TABLES` queries use exact string matching
+
+**Consequences:**
+- Intermittent failures depending on OS/database combination
+- Users see empty results for valid selections
+- Debugging is difficult because error messages are generic
 
 **Prevention:**
 ```python
-# BAD: Load entire table
-def compare_data_bad(source_conn, target_conn, table):
-    source_data = list(source_conn.execute(f"SELECT * FROM {table}"))
-    target_data = list(target_conn.execute(f"SELECT * FROM {table}"))
-    # OOM on large tables!
+# Normalize schema names consistently
+def normalize_schema_name(schema: str, db_type: str) -> str:
+    if db_type == 'oracle':
+        return schema.upper()  # Oracle always uppercase
+    elif db_type == 'mysql':
+        # Respect lower_case_table_names setting
+        return schema.lower() if is_linux_case_insensitive() else schema
+    return schema
 
-# GOOD: Stream and compare in chunks
-def compare_data_good(source_conn, target_conn, table, chunk_size=10000):
-    source_iter = fetch_chunked(source_conn, table, chunk_size)
-    target_iter = fetch_chunked(target_conn, table, chunk_size)
-
-    for source_chunk, target_chunk in zip(source_iter, target_iter):
-        compare_chunk(source_chunk, target_chunk)
-        # GC can clean up after each chunk
+# Use explicit schema qualification in queries
+query = """
+    SELECT ... FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = %s COLLATE utf8mb4_general_ci  # Case-insensitive
+"""
 ```
 
-**Phase:** Phase 3
+**Detection:**
+- Log schema name mismatches during comparison
+- Show warning when comparing across different database types
+- Display canonical schema name format in UI hints
+
+**Phase:** Phase 1 - Schema Selection UI
 
 ---
 
-### Pitfall 3: MySQL-Oracle Type Mapping Complexity
+### Pitfall 3: State Desynchronization Between Compare Modes
 
-**Problem:**
-MySQL and Oracle have different type systems with subtle incompatibilities:
+**What goes wrong:** When switching between single/multi/database comparison modes, selection state becomes inconsistent:
+- Single-table selection persists when switching to multi-table mode
+- Exclude patterns from database mode leak into multi-table mode
+- Batch comparison uses stale single-table selections
 
-| MySQL | Oracle | Notes |
-|-------|--------|-------|
-| VARCHAR(50) | VARCHAR2(50) | Oracle VARCHAR2 is different from VARCHAR |
-| DATETIME | DATE | Oracle DATE includes time |
-| DATETIME(6) | TIMESTAMP | Microsecond precision |
-| TINYINT(1) | NUMBER(1) | Boolean representation |
-| TEXT | CLOB | Large text handling |
-| BLOB | BLOB | Binary handling differs |
-| DECIMAL(10,2) | NUMBER(10,2) | Equivalent but different names |
+**Why it happens:**
+- Current implementation in `App.tsx` uses `useEffect` to reset state, but:
+  - Reset order matters (resetting tables before mode causes race conditions)
+  - Async operations may complete after mode switch
+  - Multiple `useState` calls create temporal coupling
 
-**Impact:**
-- False positive differences reported
-- Confusing type mismatch errors
-- Cross-database comparison fails
+**Consequences:**
+- Users unknowingly compare wrong tables
+- Database comparison includes tables that should be excluded
+- Hard-to-reproduce bugs in CI/CD pipelines
+
+**Prevention:**
+```typescript
+// Use a single state object for mode-specific selections
+const [compareState, setCompareState] = useState({
+  mode: 'single' as CompareMode,
+  singleTable: { source: null, target: null },
+  multiTable: { source: [], target: [] },
+  database: { excludePatterns: [] },
+});
+
+// Reset ALL mode-specific state when mode changes
+useEffect(() => {
+  setCompareState(prev => ({
+    mode: newMode,
+    singleTable: { source: null, target: null },
+    multiTable: { source: [], target: [] },
+    database: { excludePatterns: [] },
+  }));
+  resetComparison();  // Clear previous results
+}, [newMode]);
+```
+
+**Detection:**
+- Add debug mode that logs current selection state on compare
+- Show confirmation dialog with selected tables before comparing
+- Visual indicators showing which tables will be compared
+
+**Phase:** Phase 2 - Multi-Mode Support
+
+---
+
+### Pitfall 4: Database-Level Comparison Memory Exhaustion
+
+**What goes wrong:** Database-level comparison loads ALL tables into memory before returning results. Large databases (500+ tables, millions of rows) cause:
+- Backend OOM crashes during metadata comparison
+- Response payload exceeds API gateway limits (typically 10MB)
+- Frontend freezes rendering 500+ table rows
+
+**Why it happens:**
+- Current `compare_databases` endpoint builds complete result array before returning
+- No streaming or pagination of results
+- `table_summaries` array grows unbounded
+
+**Consequences:**
+- Comparison fails silently with 500 error
+- Users receive "Failed to compare databases" with no diagnostic info
+- Server may need restart to recover memory
 
 **Prevention:**
 ```python
-# Type mapping registry with canonicalization
-TYPE_MAPPING_MYSQL_TO_ORACLE = {
-    'varchar': 'varchar2',
-    'datetime': 'date',
-    'datetime(6)': 'timestamp',
-    'tinyint(1)': 'number(1)',
-    'text': 'clob',
-    'decimal': 'number',
-    'int': 'number',
-    'bigint': 'number',
-}
+# Stream results and cap table count
+@router.post("/schema/database")
+async def compare_databases(request: DatabaseCompareRequest):
+    # Cap at 200 tables per comparison
+    MAX_TABLES = 200
+    matching_tables = sorted(source_set & target_set)[:MAX_TABLES]
 
-def canonicalize_type(db_type: str, db_kind: str) -> str:
-    """Convert database-specific type to canonical form for comparison."""
-    if db_kind == 'mysql':
-        # Normalize MySQL types
-        db_type = db_type.lower()
-        if db_type == 'varchar':
-            return 'varchar'
-        elif db_type in ('datetime', 'timestamp'):
-            return 'datetime'
-        # ... more mappings
-    elif db_kind == 'oracle':
-        # Normalize Oracle types
-        db_type = db_type.lower()
-        if db_type == 'varchar2':
-            return 'varchar'  # Map to canonical
-        elif db_type == 'date':
-            return 'datetime'
-        # ... more mappings
-    return db_type
+    # Yield results incrementally (FastAPI StreamingResponse)
+    async def generate_results():
+        summaries = []
+        for i, table_name in enumerate(matching_tables):
+            diff = comparator.compare(...)
+            summaries.append(build_summary(table_name, diff))
+
+            # Return partial results every 50 tables
+            if i % 50 == 0:
+                yield json.dumps({"partial": True, "summaries": summaries})
+                summaries = []
+
+        yield json.dumps({"partial": False, "summaries": summaries})
+
+    return StreamingResponse(generate_results())
 ```
 
-**Phase:** Phase 2
+**Frontend prevention:**
+```typescript
+// Virtualize table results
+import { FixedSizeList } from 'react-window';
+
+const DatabaseResultsTable = ({ results }) => (
+  <FixedSizeList height={600} itemCount={results.length} itemSize={50}>
+    {({ index, style }) => (
+      <div style={style}>
+        <SummaryRow data={results[index]} />
+      </div>
+    )}
+  </FixedSizeList>
+);
+```
+
+**Detection:**
+- Monitor heap usage during comparison (`process.memoryUsage()`)
+- Add table count warning before starting comparison
+- Implement circuit breaker: "Comparing 500+ tables may take several minutes"
+
+**Phase:** Phase 2 - Database-Level Comparison
 
 ---
 
-### Pitfall 4: Character Set and Collation Differences
+### Pitfall 5: Schema Selection Permission Blindness
 
-**Problem:**
-MySQL utf8mb4 with case-insensitive collation vs Oracle AL32UTF8 with case-sensitive comparison leads to false mismatches.
+**What goes wrong:** Users can see schemas in dropdown they cannot actually access. When comparison runs:
+- Comparison fails with cryptic "permission denied" errors
+- Partial results returned (some schemas compared, others silently skipped)
+- User assumes schemas are identical when comparison never ran
 
-**Example:**
-```sql
--- MySQL: 'Hello' = 'hello' with utf8mb4_general_ci
--- Oracle: 'Hello' != 'hello' (case-sensitive by default)
-```
+**Why it happens:**
+- Current `get_tables()` doesn't filter by user permissions
+- No error differentiation between "schema doesn't exist" and "no permission"
+- Oracle's `ALL_TABLES` shows tables user can SELECT from, MySQL shows all
 
-**Impact:**
-- String comparisons report false differences
-- Confusing results for users
+**Consequences:**
+- Security audit failures (users discover restricted schemas exist)
+- Incomplete comparisons appear successful
+- Debugging requires DBA intervention
 
 **Prevention:**
 ```python
-# Normalize string comparison based on collation
-def compare_strings(a: str, b: str, collation: str) -> bool:
-    if 'ci' in collation.lower():  # Case-insensitive
-        return a.lower() == b.lower()
-    elif 'bin' in collation.lower():  # Binary
-        return a.encode() == b.encode()
-    else:
-        return a == b
-
-# Fetch collation metadata
-def get_column_collation(mysql_conn, table, column):
-    result = mysql_conn.execute("""
-        SELECT COLLATION_NAME FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = %s AND COLUMN_NAME = %s
-    """, (table, column))
-    return result.fetchone()['COLLATION_NAME']
+# Filter tables by actual permissions
+def get_tables(self) -> list[dict]:
+    # MySQL: Check INFORMATION_SCHEMA with privilege filtering
+    query = """
+        SELECT TABLE_NAME, TABLE_TYPE, TABLE_ROWS, CREATE_TIME
+        FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = %s
+          AND TABLE_NAME IN (
+            SELECT TABLE_NAME FROM information_schema.TABLE_PRIVILEGES
+            WHERE GRANTEE = CURRENT_USER()
+              AND TABLE_SCHEMA = %s
+              AND PRIVILEGE_TYPE IN ('SELECT', 'SHOW VIEW')
+          )
+    """
+    # Oracle: Use USER_TABLES instead of ALL_TABLES for permission-aware listing
 ```
 
-**Phase:** Phase 2
+**Detection:**
+- Show permission status icon next to each schema in dropdown
+- Log permission-denied errors separately from other failures
+- Add "Schema Access Report" showing which schemas were actually compared
+
+**Phase:** Phase 1 - Schema Selection UI
 
 ---
 
-### Pitfall 5: NULL Handling in Comparisons
+### Pitfall 6: Exclude Pattern Ambiguity in Database Mode
 
-**Problem:**
-NULL != NULL in SQL (and most programming languages). Naive comparison reports all NULL values as different.
+**What goes wrong:** Wildcard patterns like `sys_*` behave differently than expected:
+- `*` matches underscore in some patterns (`sys_` matches `sys_audit_log`)
+- Case sensitivity varies (`USER_*` doesn't match `user_sessions` on MySQL)
+- Special characters in table names break pattern matching
 
-**Impact:**
-- False positive differences
-- Unreliable comparison results
+**Why it happens:**
+- Current implementation uses simple regex conversion: `pattern.replace('*', '.*')`
+- No escaping of regex special characters in table names
+- Patterns applied before fetching vs. after fetching affects performance
+
+**Consequences:**
+- Users exclude wrong tables unintentionally
+- Critical tables skipped from comparison
+- Pattern debugging is trial-and-error
 
 **Prevention:**
 ```python
-# NULL-safe comparison
-def safe_equals(a, b):
-    if a is None and b is None:
-        return True
-    if a is None or b is None:
-        return False
-    return a == b
+# Use proper glob-to-regex conversion with escaping
+import fnmatch
+import re
 
-# For database queries, use IS NOT DISTINCT FROM (PostgreSQL)
-# or equivalent NULL-safe comparison
-SELECT * FROM table1 t1
-FULL OUTER JOIN table2 t2
-  ON t1.id = t2.id
-  AND (t1.value = t2.value OR (t1.value IS NULL AND t2.value IS NULL))
+def should_exclude_table(self, table_name: str) -> bool:
+    for pattern in self.exclude_patterns:
+        # fnmatch handles glob escaping correctly
+        if fnmatch.fnmatch(table_name, pattern):
+            return True
+        # Also try case-insensitive for MySQL
+        if fnmatch.fnmatch(table_name.lower(), pattern.lower()):
+            return True
+    return False
+
+# Pre-compile patterns and validate before saving
+def validate_exclude_pattern(pattern: str) -> tuple[bool, str]:
+    """Validate pattern and return (is_valid, error_message)"""
+    try:
+        regex = fnmatch.translate(pattern)
+        re.compile(regex)
+        return True, ""
+    except re.error as e:
+        return False, f"Invalid pattern: {e}"
 ```
 
-**Phase:** Phase 3
+**Frontend prevention:**
+```typescript
+// Show pattern preview/matching tables in real-time
+const ExcludePatternInput = ({ value, allTables, onExcludeMatch }) => {
+  const matchingTables = useMemo(() => {
+    const regex = new RegExp(`^${value.replace(/\*/g, '.*')}$`, 'i');
+    return allTables.filter(t => regex.test(t.table_name));
+  }, [value, allTables]);
+
+  return (
+    <>
+      <Input value={value} onChange={...} />
+      {matchingTables.length > 0 && (
+        <Text type="secondary">
+          This pattern will exclude: {matchingTables.map(t => t.table_name).join(', ')}
+        </Text>
+      )}
+    </>
+  );
+};
+```
+
+**Detection:**
+- Show "matched tables" preview as user types patterns
+- Validate patterns before starting comparison
+- Log excluded table count in comparison summary
+
+**Phase:** Phase 2 - Database-Level Comparison
 
 ---
 
-### Pitfall 6: Oracle Driver Deployment Complexity
+## Moderate Pitfalls
 
-**Problem:**
-Oracle's `oracledb` thick mode requires Oracle Instant Client libraries, which are:
-- Large downloads (~50MB)
-- Platform-specific
-- Require environment configuration (LD_LIBRARY_PATH, PATH)
+### Pitfall 7: Concurrent Comparison Race Conditions
 
-**Impact:**
-- Deployment failures
-- "Cannot load OCI library" errors
-- Support burden
+**What goes wrong:** Users can trigger multiple comparisons simultaneously by:
+- Clicking compare button multiple times before first completes
+- Switching modes mid-comparison and triggering new comparison
+- Opening multiple browser tabs with same connection
+
+**Why it happens:**
+- React Query mutations don't prevent concurrent calls by default
+- Backend comparison endpoints are stateless
+- No request deduplication or cancellation
+
+**Prevention:**
+```typescript
+// Disable button during comparison
+<Button
+  type="primary"
+  onClick={handleCompare}
+  loading={isComparing}
+  disabled={isComparing}  // Critical: prevent clicks
+/>
+
+// Cancel previous comparison when mode changes
+const compareQuery = useMutation({
+  mutationFn: compareSchemas,
+  onMutate: () => {
+    // Cancel any in-flight comparisons
+    queryClient.removeQueries(['comparison', 'pending']);
+  },
+});
+```
+
+**Phase:** Phase 2 - Multi-Mode Support
+
+---
+
+### Pitfall 8: Table Name Encoding Issues
+
+**What goes wrong:** Table names with special characters break comparison:
+- Spaces: `My Table` → SQL injection vulnerability if not escaped
+- Quotes: `Table"WithQuote` → SQL syntax errors
+- Unicode: `用户表` → encoding mismatches between MySQL and Oracle
+
+**Why it happens:**
+- Current code uses parameterized queries but table names are interpolated
+- `adapter.get_table_metadata(table_name)` doesn't validate/escape table names
+- Cross-database comparisons may mangle non-ASCII characters
 
 **Prevention:**
 ```python
-# Start with thin mode (pure Python, no Oracle client)
-import oracledb
+# Validate and quote table names
+from sqlalchemy.sql import quoted_name
 
-# Thin mode by default (oracledb 2.0+)
-connection = oracledb.connect(
-    user="username",
-    password="password",
-    host="hostname",
-    port=1521,
-    service_name="service"
-)
-
-# Document thick mode setup for advanced features:
-# https://oracle.github.io/python-oracledb/thin thick.html
-```
-
-**Recommendation:** Use thin mode for Phase 2. Provide documentation for thick mode if advanced features (CLOB/BLOB streaming, advanced types) are needed.
-
-**Phase:** Phase 2
-
----
-
-### Pitfall 7: Primary Key Assumption
-
-**Problem:**
-Assuming all tables have primary keys. Tables without PKs cannot use key-based comparison.
-
-**Impact:**
-- Data comparison fails or produces incorrect results
-- No way to match rows between source and target
-
-**Prevention:**
-```python
-def compare_data(source_conn, target_conn, table):
-    pk_columns = get_primary_key_columns(source_conn, table)
-
-    if not pk_columns:
-        # Fallback strategies:
-        # 1. Use all columns as composite key
-        # 2. Use ROWID (Oracle) or internal ID
-        # 3. Report "Cannot compare: No primary key"
-        pk_columns = get_all_columns(source_conn, table)
-        # Or:
-        raise ComparisonError(f"Table {table} has no primary key, cannot compare")
-
-    # Proceed with PK-based comparison
-```
-
-**Phase:** Phase 3
-
----
-
-### Pitfall 8: Timezone and Timestamp Handling
-
-**Problem:**
-MySQL TIMESTAMP converts to UTC, DATETIME does not. Oracle TIMESTAMP WITH TIME ZONE vs TIMESTAMP WITHOUT TIME ZONE. Comparing timestamps across databases with different timezone handling leads to apparent differences.
-
-**Impact:**
-- Timestamp columns always show as different
-- Confusing results for users
-
-**Prevention:**
-```python
-# Normalize timestamps to UTC for comparison
-from datetime import datetime, timezone
-
-def normalize_timestamp(dt: datetime, has_tz: bool) -> datetime:
-    if dt is None:
-        return None
-    if has_tz and dt.tzinfo is None:
-        # Assume UTC if no timezone but column expects it
-        return dt.replace(tzinfo=timezone.utc)
-    elif not has_tz and dt.tzinfo is not None:
-        # Strip timezone for columns without TZ
-        return dt.replace(tzinfo=None)
-    return dt
-
-# Document: "Timestamp comparisons are normalized to UTC"
-```
-
-**Phase:** Phase 2
-
----
-
-## Moderate Pitfalls (Plan For)
-
-### Pitfall 9: Float Precision Differences
-
-**Problem:**
-MySQL FLOAT/DOUBLE vs Oracle FLOAT/BINARY_DOUBLE may have slight precision differences due to IEEE 754 representation.
-
-**Impact:**
-- False positive differences on floating-point columns
-- 1.00000001 vs 1.00000000
-
-**Prevention:**
-```python
-import math
-
-def float_equals(a: float, b: float, epsilon: float = 1e-9) -> bool:
-    if a is None or b is None:
-        return a is None and b is None
-    return math.isclose(a, b, rel_tol=epsilon)
-```
-
-**Phase:** Phase 3
-
----
-
-### Pitfall 10: Schema Case Sensitivity
-
-**Problem:**
-MySQL table names are case-insensitive on Windows, case-sensitive on Linux. Oracle identifiers are uppercase by default unless quoted.
-
-**Impact:**
-- "Table not found" errors
-- Inconsistent behavior across environments
-
-**Prevention:**
-```python
-# Normalize table names based on database
-def normalize_table_name(table: str, db_kind: str) -> str:
-    if db_kind == 'oracle':
-        return table.upper()  # Oracle default
-    elif db_kind == 'mysql':
-        return table  # Preserve case, depends on OS
-    return table
-
-# Always use consistent quoting in queries
-# MySQL: Use backticks
-# Oracle: Use double quotes for case-sensitive identifiers
-```
-
-**Phase:** Phase 1
-
----
-
-## Pitfall Priority by Phase
-
-| Phase | Pitfall | Severity |
-|-------|---------|----------|
-| Phase 1 | #1 Metadata Query Performance | HIGH |
-| Phase 1 | #10 Schema Case Sensitivity | MEDIUM |
-| Phase 2 | #3 MySQL-Oracle Type Mapping | HIGH |
-| Phase 2 | #4 Character Set/Collation | MEDIUM |
-| Phase 2 | #6 Oracle Driver Deployment | MEDIUM |
-| Phase 2 | #8 Timezone Handling | MEDIUM |
-| Phase 3 | #2 Memory Exhaustion | CRITICAL |
-| Phase 3 | #5 NULL Handling | HIGH |
-| Phase 3 | #7 Primary Key Assumption | HIGH |
-| Phase 3 | #9 Float Precision | LOW |
-
----
-
-## Security Pitfalls
-
-### Pitfall 11: Credential Exposure in Logs
-
-**Problem:**
-Logging database connection strings or query results may expose passwords and sensitive data.
-
-**Prevention:**
-```python
-import structlog
-
-logger = structlog.get_logger()
-
-# BAD: Logs credentials
-logger.info("Connecting to DB", connection_string=str(config))
-
-# GOOD: Redact sensitive fields
-def redact_connection_info(config):
-    return {
-        "host": config.host,
-        "port": config.port,
-        "database": config.database,
-        "username": config.username,
-        "password": "***REDACTED***"
-    }
-
-logger.info("Connecting to DB", **redact_connection_info(config))
-```
-
-**Phase:** Phase 1
-
----
-
-### Pitfall 12: SQL Injection in Dynamic Queries
-
-**Problem:**
-Building table names dynamically without validation allows SQL injection.
-
-**Prevention:**
-```python
-# BAD: SQL injection vulnerability
-def get_table_metadata_bad(table_name):
-    query = f"SELECT * FROM information_schema.COLUMNS WHERE TABLE_NAME = '{table_name}'"
-    cursor.execute(query)  # Vulnerable!
-
-# GOOD: Validate table name, use parameterized queries
-def get_table_metadata_good(table_name):
-    # Validate table name format (alphanumeric + underscore)
-    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table_name):
+def get_table_metadata(self, table_name: str) -> dict:
+    # Validate table name format
+    if not re.match(r'^[\w\u4e00-\u9fff]+$', table_name):
         raise ValueError(f"Invalid table name: {table_name}")
 
+    # Use quoted_name for proper escaping
+    safe_table_name = quoted_name(table_name, self.requires_quoting)
+
     # Use parameterized query where possible
-    query = "SELECT * FROM information_schema.COLUMNS WHERE TABLE_NAME = %s"
-    cursor.execute(query, (table_name,))
+    query = text("""
+        SELECT ... FROM information_schema.COLUMNS
+        WHERE TABLE_NAME = :table_name
+    """).bindparams(table_name=safe_table_name)
 ```
 
-**Phase:** Phase 1
+**Phase:** Phase 1 - Schema Selection UI
 
 ---
 
-*Last updated: 2026-03-28*
+### Pitfall 9: Schema Comparison Result Size Explosion
+
+**What goes wrong:** Comparing schemas with hundreds of columns generates massive response payloads:
+- 500-column table × 4 difference types = 2000+ diff objects
+- JSON response exceeds 5MB
+- Frontend table component crashes rendering 1000+ rows
+
+**Why it happens:**
+- Current `SchemaDiffResponse` has no pagination or truncation
+- All diffs returned even if user only sees first 50
+- No compression for highly similar schemas
+
+**Prevention:**
+```python
+# Truncate and paginate diffs
+@router.post("/schema", response_model=SchemaDiffResponse)
+async def compare_schemas(
+    request: SchemaCompareRequest,
+    limit: int = 100,  # Max diffs per category
+) -> SchemaDiffResponse:
+    diff = comparator.compare(...)
+
+    return SchemaDiffResponse(
+        ...
+        column_diffs=diff.column_diffs[:limit],
+        index_diffs=diff.index_diffs[:limit],
+        constraint_diffs=diff.constraint_diffs[:limit],
+        truncated=len(diff.column_diffs) > limit,  # Flag for UI
+    )
+```
+
+**Frontend prevention:**
+```typescript
+// Use virtualized table for diffs
+import { FixedSizeList } from 'react-window';
+
+<SchemaDiffViewer
+  diffResult={comparisonResult}
+  maxInitialDiffs={50}  // Show first 50, lazy load rest
+/>
+```
+
+**Phase:** Phase 2 - Multi-Mode Support
+
+---
+
+## Minor Pitfalls
+
+### Pitfall 10: Connection Change Clears User Selections
+
+**What goes wrong:** Changing connection resets table selection, but:
+- User has already selected tables for previous connection
+- Comparison button state doesn't update correctly
+- Error message says "select tables" but dropdown shows new tables
+
+**Prevention:** Reset selections in the same event handler as connection change, not in useEffect.
+
+**Phase:** Phase 1 - Schema Selection UI
+
+---
+
+### Pitfall 11: Empty Schema Edge Case
+
+**What goes wrong:** Empty databases or filtered schemas show:
+- "No tables available" but compare button is still enabled
+- Comparison runs and fails with no clear error
+
+**Prevention:** Disable compare button when either schema has zero tables after filtering.
+
+**Phase:** Phase 1 - Schema Selection UI
+
+---
+
+### Pitfall 12: Loading State Doesn't Reflect Nested Operations
+
+**What goes wrong:** Multiple async operations (fetch source tables, fetch target tables, compare) show:
+- Single loading spinner for all operations
+- User can't tell which step is running
+- Spinner disappears between steps making it seem like nothing is happening
+
+**Prevention:** Use granular loading states: `isLoadingSource`, `isLoadingTarget`, `isComparing`.
+
+**Phase:** Phase 1 - Schema Selection UI
+
+---
+
+## Phase-Specific Warnings
+
+| Phase Topic | Likely Pitfall | Mitigation |
+|-------------|---------------|------------|
+| Schema dropdown implementation | Performance on large schemas | Implement virtual scrolling + search-as-you-type from day one |
+| Multi-table selection state | State desynchronization between modes | Use single state object, reset atomically on mode change |
+| Database comparison | Memory exhaustion on large databases | Add table count limits (200 max) before building full result |
+| Exclude patterns UI | Pattern ambiguity | Add real-time "matching tables" preview |
+| Cross-database comparison | Case sensitivity issues | Normalize schema/table names by database type |
+| Error handling | Permission blindness | Differentiate "doesn't exist" from "no permission" |
+| Result display | Result size explosion | Paginate diffs, truncate at 100 per category |
+| Concurrent operations | Race conditions | Disable buttons during comparison, cancel in-flight requests |
+
+---
+
+## Integration with Existing Pitfalls
+
+This document complements the original PITFALLS.md. When implementing schema selection and multi-mode comparison:
+
+1. **Also apply original pitfalls:**
+   - Pitfall #1 (Metadata Query Performance) - applies to schema dropdown
+   - Pitfall #3 (MySQL-Oracle Type Mapping) - applies to cross-database comparison
+   - Pitfall #10 (Schema Case Sensitivity) - applies to schema selection
+   - Pitfall #12 (SQL Injection) - applies to dynamic table names
+
+2. **New pitfalls are specific to:**
+   - UI state management across modes
+   - Large schema enumeration performance
+   - Exclude pattern handling
+   - Database-level comparison scalability
+
+---
+
+## Sources
+
+- Internal codebase analysis: `backend/app/api/connections.py`, `backend/app/api/compare.py`, `frontend/src/App.tsx`, `frontend/src/components/TableBrowser.tsx`, `frontend/src/hooks/useComparison.ts`
+- Ant Design Select performance documentation
+- SQLAlchemy metadata reflection best practices
+- MySQL information_schema privilege filtering
+- Oracle ALL_TABLES vs USER_TABLES access patterns
+- FastAPI StreamingResponse documentation
+- React Query mutation concurrency patterns
+
+---
+
+*Last updated: 2026-03-29*

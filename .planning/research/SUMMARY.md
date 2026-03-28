@@ -1,132 +1,156 @@
-# Research Summary: DB Compare - 数据库库表比对系统
+# Project Research Summary
 
-**Domain:** Database Comparison System for NOC/DBA Teams
-**Researched:** 2026-03-28
-**Overall confidence:** HIGH
+**Project:** DB Compare - v1.1 Schema Selection & Multi-Mode Enhancement
+**Domain:** Database Schema Comparison Tools
+**Researched:** 2026-03-29
+**Confidence:** HIGH
 
 ## Executive Summary
 
-DB Compare is a greenfield database comparison tool designed for Chinese internet company operations teams. The system supports MySQL and Oracle databases, providing table schema comparison and data comparison capabilities. The key value proposition is reducing manual comparison errors, improving change verification efficiency, and ensuring environment consistency.
+DB Compare is a database schema comparison tool that enables users to compare MySQL and Oracle database structures. The existing architecture already implements the three core comparison modes (single-table, multi-table, and database-level), and the primary enhancement needed is schema selection UI for database-level comparison—specifically for Oracle multi-schema scenarios.
 
-The 2025-2026 technology stack centers on **Python 3.11+ with FastAPI** for backend (excellent database ecosystem with SQLAlchemy, cx_Oracle, mysql-connector), **React 18+ with TypeScript** for frontend (Ant Design for enterprise UI), and **PostgreSQL 16+** for operational data storage (configuration, history, scheduled tasks).
+The recommended approach is to extend the existing adapter layer with `get_schemas()` methods for schema enumeration, add a schema dropdown to the frontend that appears only in database-level mode, and pass schema filters through to the existing `get_tables()` calls. No new libraries or dependencies are required; all functionality can be built with the existing FastAPI/React/Ant Design stack.
 
-The architecture follows a **layered adapter pattern**: Database Adapters (MySQL/Oracle) → Comparison Engine (Schema/Data) → API Layer → Presentation (Web UI). Critical design decisions include **read-only mode** (no DDL/DML execution), **adapter pattern for multi-database support**, and **batch processing for large table comparison**.
-
-The feature roadmap prioritizes **MySQL schema comparison** (Phase 1), followed by **Oracle support and cross-database comparison** (Phase 2), **data comparison engine** (Phase 3), and **scheduling/alerting automation** (Phase 4).
-
-Key pitfalls identified from industry patterns include: metadata query performance on large schemas, data type mapping complexity between MySQL/Oracle, character set/collation differences, and large table comparison memory exhaustion. The research recommends strict MVP scope (MySQL first, defer Oracle to Phase 2) and explicit performance gate reviews for large table handling.
+Key risks include performance degradation when enumerating schemas/tables on large databases (500+ tables), case sensitivity issues when comparing across MySQL and Oracle, and state desynchronization when switching between comparison modes. These can be mitigated through virtual scrolling, schema name normalization, and atomic state resets on mode changes.
 
 ## Key Findings
 
-**Stack:** Python 3.11+ + FastAPI for backend (database driver ecosystem maturity), React 18+ + TypeScript + Ant Design for frontend (enterprise dashboard components), PostgreSQL 16+ + Redis 7+ for data layer (configuration storage + caching). Database drivers: `mysql-connector-python` or `aiomysql` for MySQL, `oracledb` (formerly cx_Oracle) for Oracle.
+### Recommended Stack
 
-**Architecture:** Layered adapter architecture with 4 layers: Database Adapter Layer (MySQL/Oracle connectors) → Comparison Engine (schema/data comparators) → API Layer (FastAPI REST) → Presentation (React Web UI). Event Queue (Redis/Celery) for async comparison tasks. Build order: Foundation → Schema Comparison → Data Comparison → Automation.
+**Key Finding: NO NEW DEPENDENCIES REQUIRED.** The existing stack fully supports all required features.
 
-**Critical pitfall:** **Metadata Query Performance** — naive information_schema queries on databases with 10000+ tables can take 30+ seconds. Prevention: selective metadata loading, query optimization, result caching. Second critical pitfall: **Large Table Comparison Memory Exhaustion** — loading entire tables into memory causes OOM. Prevention: streaming comparison, chunked processing, hash-based validation.
+**Core technologies:**
+- **FastAPI + Pydantic**: API framework with request validation — already handles all comparison endpoints
+- **SQLAlchemy 2.0+**: Metadata reflection — schema-agnostic, works unchanged with schema filtering
+- **mysql-connector-python 8.0+**: MySQL driver — queries `information_schema.TABLES` which is already schema-scoped
+- **oracledb 2.0+**: Oracle driver — needs `OWNER` filter addition for schema selection support
+- **Ant Design 5.22+**: UI components — `Select` component supports search, multi-select, and virtualization
+- **Zustand 5.0+**: State management — sufficient for mode state and selection handling
+
+**Critical version notes:** All existing dependencies are current and sufficient. No upgrades needed.
+
+### Expected Features
+
+**Must have (table stakes):**
+- **Schema dropdown selection** — users need to select which schemas/databases to compare
+- **Mode switcher (Single/Multi/Database)** — already implemented in TableBrowser.tsx
+- **Multi-select table UI** — checkbox-based selection for multi-table mode
+- **Exclude pattern filtering** — wildcard support for system tables (`sys_*`, `*_log`)
+- **Connection prerequisite enforcement** — disable table selection until connections chosen
+- **Auto-match same-name tables** — tables with identical names should auto-pair
+
+**Should have (competitive):**
+- **Schema-level selection for database mode** — Oracle-specific; MySQL schema = database
+- **Comparison preview count** — show "X tables will be compared" before running
+- **Exclude pattern presets** — common patterns like "System Tables", "Temp Tables"
+- **Real-time pattern matching preview** — show which tables match as user types patterns
+
+**Defer (v2+):**
+- **Manual table mapping UI** — complex drag-drop for differently-named tables
+- **Save table selection groups** — premature without usage pattern validation
+- **Table dependency ordering** — advanced feature for complex schemas
+- **Progressive results loading** — optimization for very large batch comparisons
+
+### Architecture Approach
+
+The architecture extends the existing adapter layer with schema enumeration capabilities while keeping the comparison logic unchanged. Schema filtering happens at fetch time, not during comparison.
+
+**Major components:**
+1. **DatabaseAdapter (base)** — add abstract `get_schemas()` method and `get_tables(schema?)` signature
+2. **MySQLAdapter/OracleAdapter** — implement schema listing via `information_schema.SCHEMATA` and `ALL_USERS`
+3. **GET /api/connections/{id}/schemas** — new endpoint for schema enumeration
+4. **TableBrowser.tsx** — add schema dropdown UI (database mode only), conditional on mode state
+5. **App.tsx** — add schema state (`sourceSchema`, `targetSchema`) and React Query hooks for schema fetching
+
+### Critical Pitfalls
+
+1. **Schema enumeration performance on large databases** — Naive full-fetch of all schemas/tables causes UI freeze with 500+ tables. **Prevention:** Implement virtual scrolling + search-as-you-type from day one; add backend pagination with `limit` parameter.
+
+2. **State desynchronization between compare modes** — Switching modes (single→multi→database) causes stale selections to persist. **Prevention:** Use single state object for mode-specific selections; reset atomically on mode change.
+
+3. **Database-level comparison memory exhaustion** — Loading ALL tables into memory before returning causes OOM on 500+ table databases. **Prevention:** Cap at 200 tables max; consider streaming results with `StreamingResponse`.
+
+4. **Cross-database schema name case sensitivity** — MySQL case sensitivity varies by OS; Oracle always uppercase. **Prevention:** Normalize schema names by database type before comparison; use explicit collation in queries.
+
+5. **Exclude pattern ambiguity** — Wildcard patterns like `sys_*` behave unexpectedly with special characters. **Prevention:** Use `fnmatch` for proper glob-to-regex conversion; add real-time "matching tables" preview.
 
 ## Implications for Roadmap
 
 Based on research, suggested phase structure:
 
-### Phase 1: Foundation (MySQL Schema Comparison)
-- **Goal:** Prove value via MySQL schema comparison without Oracle complexity
-- **Features:** MySQL connection management, information_schema metadata extraction, table structure comparison (columns, indexes, constraints), basic Web UI for diff visualization
-- **Architecture:** MySQL adapter, SQLAlchemy metadata reflection, diff algorithm, FastAPI backend, React frontend
-- **Avoids:** Pitfall #1 (Oracle complexity early) — defer to Phase 2; Pitfall #2 (Memory exhaustion) — streaming queries from Day 1
+### Phase 1: Schema Selection UI (Backend + Frontend)
+**Rationale:** Foundational feature—schema enumeration must work before users can select schemas. This phase unblocks all database-level comparison enhancements.
+**Delivers:** Schema dropdown for database-level comparison (Oracle focus), schema-filtered table fetching
+**Addresses:** Schema selection feature from FEATURES.md, Oracle multi-schema support
+**Avoids:** Pitfall #2 (case sensitivity) via schema normalization, Pitfall #10 (empty schema edge case) via validation
 
-### Phase 2: Multi-Database (Oracle + Cross-DB Comparison)
-- **Goal:** Extend to Oracle and enable cross-database comparison
-- **Features:** Oracle adapter (ALL_TAB_COLUMNS, ALL_CONSTRAINTS), unified metadata abstraction, MySQL<->Oracle type mapping, cross-database schema comparison, HTML report generation
-- **Architecture:** Oracle adapter, unified metadata layer, type mapping registry, report generator (Jinja2)
-- **Avoids:** Pitfall #3 (Type mapping complexity) — explicit mapping table; Pitfall #4 (Character set issues) — normalization layer
+### Phase 2: Multi-Mode Comparison Polish
+**Rationale:** Existing mode switching needs state management fixes to prevent desynchronization. Independent from schema selection but critical for UX.
+**Delivers:** Atomic state reset on mode changes, multi-select table UI, auto-match display
+**Uses:** Zustand state management patterns from existing code
+**Implements:** Component Boundaries pattern from ARCHITECTURE.md (TableBrowser mode-specific rendering)
+**Avoids:** Pitfall #3 (state desynchronization), Pitfall #7 (concurrent race conditions)
 
-### Phase 3: Data Comparison Engine
-- **Goal:** Deliver data comparison capabilities
-- **Features:** Full table comparison (small tables), sampling comparison (large tables), key column comparison, MD5 hash validation, data diff visualization
-- **Architecture:** Data comparison engine, chunked query processor, hash calculator, streaming comparator
-- **Avoids:** Pitfall #2 (Memory exhaustion) — chunked processing; Pitfall #5 (NULL handling) — explicit NULL-safe comparison
+### Phase 3: Database-Level Comparison Hardening
+**Rationale:** Once schema selection works, database-level comparison needs performance and scalability improvements.
+**Delivers:** Exclude pattern filtering with preview, table count caps, memory-safe comparison
+**Uses:** fnmatch for pattern matching, optional FastAPI StreamingResponse for large results
+**Implements:** Pattern 2 (Schema-Parameterized Table Fetching) from ARCHITECTURE.md
+**Avoids:** Pitfall #4 (memory exhaustion), Pitfall #6 (exclude pattern ambiguity)
 
-### Phase 4: Automation (Scheduling & Alerting)
-- **Goal:** Enable automated comparison workflows
-- **Features:** Scheduled comparison tasks, alert notifications (email/DingTalk/WeCom), comparison history tracking, trend analysis and statistics
-- **Architecture:** Task scheduler (Celery), notification integrations, history storage, analytics engine
-- **Avoids:** Pitfall #6 (Resource contention) — rate limiting, concurrency control
+### Phase Ordering Rationale
 
-**Phase ordering rationale:**
-1. **MySQL first** — Simpler metadata schema, wider adoption, faster time to value
-2. **Schema before data** — Structure comparison is prerequisite for meaningful data comparison
-3. **Read-only before write** — Build trust before considering sync capabilities
-4. **Manual before automated** — Prove value manually, then automate
+- **Phase 1 first** because schema enumeration (`get_schemas()`) is a prerequisite for schema dropdown UI and schema-filtered table fetching. Without this, database-level comparison cannot scope to specific schemas.
 
-**Research flags for phases:**
-- **Phase 1:** LOW research risk — standard information_schema queries, well-documented MySQL metadata
-- **Phase 2:** MEDIUM research risk — Oracle system views, MySQL/Oracle type mapping nuances, character set normalization
-- **Phase 3:** MEDIUM-HIGH research risk — efficient data comparison algorithms, BLOB/CLOB handling, NULL-safe comparison
-- **Phase 4:** LOW research risk — standard Celery patterns, common notification APIs
+- **Phase 2 can run parallel** to Phase 1—mode switching state fixes are independent from schema selection. However, Phase 2's multi-select UI benefits from Phase 1's table fetching improvements.
+
+- **Phase 3 last** because exclude patterns and memory optimization only matter once schema selection is working. Database-level comparison is the most complex mode and should be built on stable foundations.
+
+### Research Flags
+
+**Phases likely needing deeper research during planning:**
+- **Phase 3:** StreamingResponse implementation for large comparisons—needs performance testing to determine if pagination or streaming is better fit
+
+**Phases with standard patterns (skip research-phase):**
+- **Phase 1:** Schema enumeration is well-documented (`information_schema.SCHEMATA`, `ALL_USERS` queries)
+- **Phase 2:** State management patterns are established in existing codebase (Zustand, React Query)
+- **Phase 3:** `fnmatch` for glob patterns is standard Python; table count limiting is straightforward
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| **Stack** | HIGH | Python/FastAPI, React/TS, PostgreSQL are industry standards. Database drivers (mysql-connector, oracledb) are vendor-supported official libraries. |
-| **Features** | HIGH | Schema/data comparison patterns are well-established. Feature set synthesized from existing tools (Redgate SQL Compare, dbt, DataGrip diff). |
-| **Architecture** | MEDIUM-HIGH | Adapter pattern is standard for multi-database tools. Specific implementation details (streaming vs. batch processing) may vary based on performance requirements. |
-| **Pitfalls** | MEDIUM | Derived from database tool development patterns, community discussions, and logical inference. Performance pitfalls (metadata query, memory exhaustion) are well-documented. |
+| Stack | HIGH | Existing dependencies confirmed sufficient; no new libraries needed |
+| Features | MEDIUM | Based on competitor analysis (Redgate SQL Compare, dbForge); user validation needed for prioritization |
+| Architecture | HIGH | Extends existing patterns; `get_schemas()` is standard metadata query |
+| Pitfalls | MEDIUM | Inferred from codebase analysis and standard UX patterns; some untested assumptions |
 
-## Gaps to Address
+**Overall confidence:** HIGH
 
-### Areas Where Research Is Inconclusive
+### Gaps to Address
 
-1. **Oracle Connection Method**
-   - **Gap:** Should we use instant client, basic driver, or full Oracle client?
-   - **Phase:** Phase 2
-   - **Research needed:** Compare deployment complexity, licensing requirements, feature support
+- **Oracle OWNER filtering**: The `ALL_TABLES WHERE OWNER = :schema` pattern needs validation against actual Oracle instances with multi-schema databases.
 
-2. **Data Comparison Algorithm Selection**
-   - **Gap:** What's the best algorithm for large table comparison? Full scan with hash? Sampling? Checksum?
-   - **Phase:** Phase 3
-   - **Research needed:** Benchmark accuracy vs. performance trade-offs for different approaches
+- **Large schema enumeration**: Performance thresholds (500+ tables causing UI freeze) are estimated; actual impact depends on network latency and Ant Design Select rendering.
 
-3. **Character Set Normalization**
-   - **Gap:** How to handle MySQL utf8mb4 vs Oracle AL32UTF8 comparisons?
-   - **Phase:** Phase 2
-   - **Research needed:** Edge cases in string comparison, collation differences
-
-4. **Large Table Threshold**
-   - **Gap:** What row count triggers "large table" handling? 10K? 1M? 100M?
-   - **Phase:** Phase 3
-   - **Research needed:** Performance testing with realistic data volumes
-
-5. **Cross-Database Type Mapping**
-   - **Gap:** How to map MySQL DATETIME to Oracle DATE/TIMESTAMP? DECIMAL to NUMBER?
-   - **Phase:** Phase 2
-   - **Research needed:** Comprehensive type mapping table with edge cases
-
-### Topics Needing Phase-Specific Research Later
-
-| Phase | Topic | Why Defer |
-|-------|-------|-----------|
-| Phase 2 | Oracle driver deployment | Depends on customer environment (instant client availability, licensing) |
-| Phase 2 | MySQL/Oracle type mapping | Need real schema examples from Phase 1 to validate mapping |
-| Phase 3 | Data comparison algorithm tuning | Depends on typical table sizes from Phase 1 usage |
-| Phase 3 | BLOB/CLOB comparison strategy | Need customer data patterns to determine best approach |
-| Phase 4 | Notification channel prioritization | Depends on customer preferences (email vs. DingTalk vs. WeCom) |
+- **Exclude pattern UX**: Real-time matching preview implementation details need UI/UX refinement during frontend development.
 
 ## Sources
 
-- MySQL information_schema documentation: https://dev.mysql.com/doc/refman/8.0/en/information-schema.html
-- Oracle data dictionary views: https://docs.oracle.com/en/database/oracle/oracle-database/19/sqlrf/Data-Dictionary-Views.html
-- SQLAlchemy reflection documentation: https://docs.sqlalchemy.org/en/20/core/reflection.html
-- Python oracledb driver: https://oracle.github.io/python-oracledb/
-- MySQL connector documentation: https://dev.mysql.com/doc/connector-python/en/
-- Database comparison tools analysis: Redgate SQL Compare, ApexSQL Diff
-- Data comparison algorithms: Hash-based vs. row-by-row comparison patterns
+### Primary (HIGH confidence)
+- Existing codebase analysis (`backend/app/api/compare.py`, `backend/app/adapters/`, `frontend/src/components/TableBrowser.tsx`) — confirmed working comparison modes and adapter structure
+- MySQL documentation: `information_schema.SCHEMATA`, `information_schema.TABLES` schema filtering
+- Oracle documentation: `ALL_TABLES`, `ALL_USERS` system views
+
+### Secondary (MEDIUM confidence)
+- Ant Design Select performance documentation — virtual scrolling and search-as-you-type patterns
+- FastAPI StreamingResponse documentation — streaming large result sets
+- React Query mutation concurrency patterns — preventing race conditions
+
+### Tertiary (LOW confidence)
+- Competitor feature analysis (Redgate SQL Compare, dbForge Studio) — UI patterns inferred from product websites, not hands-on testing
+- Industry patterns from database tool UX research (2024-2025) — general best practices, not MySQL/Oracle-specific
 
 ---
-
-*Research complete. Files to be written to `.planning/research/`:*
-- `SUMMARY.md` — This file (executive summary + roadmap implications)
-- `STACK.md` — Technology stack recommendations with versions and rationale
-- `FEATURES.md` — Feature landscape (table stakes, differentiators, anti-features)
-- `ARCHITECTURE.md` — Architecture patterns, component boundaries, data flows
-- `PITFALLS.md` — Domain pitfalls with prevention strategies and phase mappings
+*Research completed: 2026-03-29*
+*Ready for roadmap: yes*
