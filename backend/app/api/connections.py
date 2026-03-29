@@ -1,10 +1,12 @@
 """Connection management API endpoints."""
 
+import os
 from typing import List
 
 from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from cryptography.fernet import Fernet
 
 from app.db.session import get_db_session
 from app.db.models import DbConnection
@@ -12,17 +14,18 @@ from app.schemas.api import (
     ConnectionCreate,
     ConnectionResponse,
     TableInfo,
+    ConnectionTestRequest,
+    ConnectionTestResponse,
+    SchemaInfo,
 )
 from app.adapters.mysql import MySQLAdapter
 
-# Import cryptography for password encryption
-from cryptography.fernet import Fernet
-
 router = APIRouter(prefix="/api/connections", tags=["connections"])
 
-# In production, store this key securely (environment variable, secrets manager)
-# For development, generate once and reuse
-_ENCRYPTION_KEY = Fernet.generate_key()
+# Load encryption key from environment variable
+_ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "").encode()
+if not _ENCRYPTION_KEY:
+    raise RuntimeError("ENCRYPTION_KEY environment variable not set")
 _fernet = Fernet(_ENCRYPTION_KEY)
 
 
@@ -176,6 +179,140 @@ async def get_connection_tables(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch tables: {str(e)}",
+        )
+    finally:
+        adapter.disconnect()
+
+
+@router.get("/{conn_id}/schemas", response_model=list[SchemaInfo])
+async def get_connection_schemas(
+    conn_id: int,
+    db: AsyncSession = Depends(get_db_session),
+) -> list[dict]:
+    """Fetch available schemas from a database connection.
+
+    Returns schemas (databases in MySQL, users in Oracle) that the
+    connection's credentials have access to.
+    """
+    # Fetch connection from database
+    result = await db.execute(select(DbConnection).where(DbConnection.id == conn_id))
+    connection = result.scalar_one_or_none()
+
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Connection {conn_id} not found",
+        )
+
+    # Create adapter with decrypted password
+    config = {
+        'host': connection.host,
+        'port': connection.port,
+        'database': connection.database,
+        'username': connection.username,
+        'password': decrypt_password(connection.password_encrypted),
+    }
+
+    # Use adapter factory
+    from app.adapters import get_adapter
+    adapter = get_adapter(connection.db_type, config)
+
+    try:
+        schemas = adapter.get_schemas()
+        return schemas
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch schemas: {str(e)}",
+        )
+    finally:
+        adapter.disconnect()
+
+
+@router.post("/test", response_model=ConnectionTestResponse)
+async def test_connection(
+    test_data: ConnectionTestRequest,
+    db: AsyncSession = Depends(get_db_session),
+) -> ConnectionTestResponse:
+    """Test database connection with provided credentials.
+
+    Attempts to connect to the database and returns success/failure status.
+    """
+    config = {
+        'host': test_data.host,
+        'port': test_data.port,
+        'database': test_data.database,
+        'username': test_data.username,
+        'password': test_data.password,
+    }
+
+    adapter = MySQLAdapter(config)
+
+    try:
+        if adapter.test_connection():
+            return ConnectionTestResponse(
+                success=True,
+                message="Connection successful!"
+            )
+        else:
+            return ConnectionTestResponse(
+                success=False,
+                message="Failed to connect to database"
+            )
+    except Exception as e:
+        return ConnectionTestResponse(
+            success=False,
+            message=f"Connection failed: {str(e)}"
+        )
+    finally:
+        adapter.disconnect()
+
+
+@router.get("/{conn_id}/test", response_model=ConnectionTestResponse)
+async def test_saved_connection(
+    conn_id: int,
+    db: AsyncSession = Depends(get_db_session),
+) -> ConnectionTestResponse:
+    """Test a saved database connection using stored credentials.
+
+    Attempts to connect to the database using decrypted credentials and returns success/failure status.
+    """
+    # Fetch connection from database
+    result = await db.execute(select(DbConnection).where(DbConnection.id == conn_id))
+    connection = result.scalar_one_or_none()
+
+    if not connection:
+        return ConnectionTestResponse(
+            success=False,
+            message=f"Connection {conn_id} not found"
+        )
+
+    # Create adapter with decrypted password
+    config = {
+        'host': connection.host,
+        'port': connection.port,
+        'database': connection.database,
+        'username': connection.username,
+        'password': decrypt_password(connection.password_encrypted),
+    }
+
+    adapter = MySQLAdapter(config)
+
+    try:
+        if adapter.test_connection():
+            return ConnectionTestResponse(
+                success=True,
+                message="Connection successful!"
+            )
+        else:
+            return ConnectionTestResponse(
+                success=False,
+                message="Failed to connect to database"
+            )
+    except Exception as e:
+        return ConnectionTestResponse(
+            success=False,
+            message=f"Connection failed: {str(e)}"
         )
     finally:
         adapter.disconnect()
