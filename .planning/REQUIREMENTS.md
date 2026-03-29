@@ -20,6 +20,20 @@
 
 **SCH-05:** Backend API endpoint /api/connections/{id}/schemas returns available schemas
 
+### Multi-Table Data Comparison (MTDC)
+
+**MTDC-01:** User can select multiple tables from a schema for batch data comparison
+
+**MTDC-02:** User can trigger schema-level comparison to compare all tables in a schema
+
+**MTDC-03:** Results display summary statistics (total tables, tables with diffs, total rows compared)
+
+**MTDC-04:** Results display per-table details (row counts, diff counts, status) with ability to drill down
+
+**MTDC-05:** Support exclude patterns (wildcards like sys_*, *_log) to filter tables from comparison
+
+**MTDC-06:** Progress indicator shows real-time status for each table being compared
+
 ### Multi-Mode Comparison (MODE)
 
 **MODE-01:** Mode switcher clearly shows Single/Multi/Database options
@@ -47,10 +61,11 @@
 | Category | Count | IDs |
 |----------|-------|-----|
 | Schema Selection | 5 | SCH-01 to SCH-05 |
+| Multi-Table Data Comparison | 6 | MTDC-01 to MTDC-06 |
 | Multi-Mode Comparison | 4 | MODE-01 to MODE-04 |
 | Database-Level Hardening | 4 | DB-01 to DB-04 |
 
-**Total v1 requirements:** 13
+**Total v1 requirements:** 19
 
 ---
 
@@ -63,13 +78,19 @@
 | SCH-03 | Phase 5 | Complete |
 | SCH-04 | Phase 5 | Complete |
 | SCH-05 | Phase 5 | Complete |
-| MODE-01 | Phase 6 | Pending |
-| MODE-02 | Phase 6 | Pending |
-| MODE-03 | Phase 6 | Pending |
-| MODE-04 | Phase 6 | Pending |
-| DB-01 | Phase 7 | Pending |
-| DB-02 | Phase 7 | Pending |
-| DB-03 | Phase 7 | Pending |
-| DB-04 | Phase 7 | Pending |
+| MTDC-01 | Phase 6 | Pending |
+| MTDC-02 | Phase 6 | Pending |
+| MTDC-03 | Phase 6 | Pending |
+| MTDC-04 | Phase 6 | Pending |
+| MTDC-05 | Phase 6 | Pending |
+| MTDC-06 | Phase 6 | Pending |
+| MODE-01 | Phase 7 | Pending |
+| MODE-02 | Phase 7 | Pending |
+| MODE-03 | Phase 7 | Pending |
+| MODE-04 | Phase 7 | Pending |
+| DB-01 | Phase 8 | Pending |
+| DB-02 | Phase 8 | Pending |
+| DB-03 | Phase 8 | Pending |
+| DB-04 | Phase 8 | Pending |
 
 **Coverage:** 13/13 requirements mapped (100%)

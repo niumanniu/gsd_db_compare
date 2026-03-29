@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-stopped_at: Phase 5 complete - schema selection implemented
-last_updated: "2026-03-29T00:00:00.000Z"
+stopped_at: Phase 6 ready to plan - Multi-Table Data Comparison
+last_updated: "2026-03-29T02:30:00.000Z"
 last_activity: 2026-03-29
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 1
   total_plans: 2
   completed_plans: 2
@@ -17,13 +17,13 @@ progress:
 
 ## Current Position
 
-**Status:** Phase 5 complete - ready for Phase 6
+**Status:** Phase 6 ready to plan - Multi-Table Data Comparison
 
 **Phase:** 5 (Schema Selection) — COMPLETE
 **Plan:** 2/2 complete
-**Last activity:** 2026-03-29 - Phase 5 complete (SCH-01 to SCH-05 implemented)
+**Last activity:** 2026-03-29 - Phase 6 added for Multi-Table Data Comparison
 
-**Progress:** 1/3 phases complete
+**Progress:** 1/4 phases complete
 
 ---
 
@@ -38,7 +38,9 @@ progress:
 - Backend API endpoint /api/connections/{id}/schemas (SCH-05)
 
 **Target features (remaining):**
-- 数据库比对支持 single、multi、database level 三种模式 (Phase 6)
+- 多表批量数据比对 - 选择多个表进行批量数据比对 (Phase 6)
+- Schema 级数据比对 - 比对整个 Schema 下所有表的数据一致性 (Phase 6)
+- 数据库比对支持 single、multi、database level 三种模式 (Phase 7)
 
 ---
 
@@ -47,10 +49,11 @@ progress:
 | Phase | Name | Requirements | Success Criteria |
 |-------|------|--------------|------------------|
 | 5 | Schema Selection | SCH-01 to SCH-05 (5) | 4 criteria |
-| 6 | Multi-Mode Comparison | MODE-01 to MODE-04 (4) | 4 criteria |
-| 7 | Database Hardening | DB-01 to DB-04 (4) | 4 criteria |
+| 6 | Multi-Table Data Comparison | MTDC-01 to MTDC-06 (6) | 6 criteria |
+| 7 | Multi-Mode Comparison | MODE-01 to MODE-04 (4) | 4 criteria |
+| 8 | Database Hardening | DB-01 to DB-04 (4) | 4 criteria |
 
-**Coverage:** 13/13 requirements mapped (100%)
+**Coverage:** 19/19 requirements mapped (100%)
 
 ---
 
@@ -84,4 +87,4 @@ From v1.0 MVP:
 **Last session:** 2026-03-29
 **Completed:** Phase 5 (Schema Selection) - 2 plans complete, 5 requirements implemented
 
-**Next action:** `/gsd:plan-phase 6` or `/gsd:discuss-phase 6`
+**Next action:** `/gsd:plan-phase 6` to plan Multi-Table Data Comparison phase
