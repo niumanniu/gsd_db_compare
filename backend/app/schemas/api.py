@@ -2,8 +2,8 @@
 
 from datetime import datetime
 from typing import Optional, Any
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+import re
 
 
 # ============= Connection Schemas =============
@@ -38,6 +38,23 @@ class ConnectionResponse(BaseModel):
         from_attributes = True
 
 
+class ConnectionTestRequest(BaseModel):
+    """Schema for testing a database connection."""
+
+    host: str = Field(..., description="Database host")
+    port: int = Field(..., description="Database port")
+    database: str = Field(..., description="Database name")
+    username: str = Field(..., description="Database username")
+    password: str = Field(..., description="Database password")
+
+
+class ConnectionTestResponse(BaseModel):
+    """Schema for connection test response."""
+
+    success: bool
+    message: str
+
+
 # ============= Table Metadata Schemas =============
 
 
@@ -48,6 +65,16 @@ class TableInfo(BaseModel):
     table_type: str
     row_count: Optional[int] = None
     create_time: Optional[datetime] = None
+
+
+class SchemaInfo(BaseModel):
+    """Schema information for dropdown response."""
+
+    schema_name: str = Field(..., description="Schema name (database in MySQL, user in Oracle)")
+    charset: Optional[str] = None  # MySQL: character set; Oracle: null
+    collation: Optional[str] = None  # MySQL: collation; Oracle: null
+    account_status: Optional[str] = None  # Oracle: account status; MySQL: null
+    created_time: Optional[str] = None  # Creation time if available
 
 
 class ColumnInfo(BaseModel):
@@ -129,7 +156,7 @@ class SchemaDiffResponse(BaseModel):
     column_diffs: list[ColumnDiff] = Field(default_factory=list)
     index_diffs: list[IndexDiff] = Field(default_factory=list)
     constraint_diffs: list[ConstraintDiff] = Field(default_factory=list)
-    has_differences: bool = True
+    has_differences: bool = False
     source_db_type: Optional[str] = None
     target_db_type: Optional[str] = None
     comparison_mode: Optional[str] = None  # 'same-database' or 'cross-database'
@@ -138,12 +165,75 @@ class SchemaDiffResponse(BaseModel):
     def diff_count(self) -> int:
         return len(self.column_diffs) + len(self.index_diffs) + len(self.constraint_diffs)
 
-    def __post_init__(self):
+    @model_validator(mode='after')
+    def set_has_differences(self):
         if self.diff_count > 0:
             self.has_differences = True
         # Set comparison mode if not already set
         if self.comparison_mode is None and self.source_db_type and self.target_db_type:
             self.comparison_mode = 'same-database' if self.source_db_type == self.target_db_type else 'cross-database'
+        return self
+
+
+class TableCompareSummary(BaseModel):
+    """Summary of a single table comparison in batch/database compare."""
+
+    source_table: str
+    target_table: str
+    has_differences: bool = False
+    diff_count: int = 0
+    status: str = 'success'  # 'success' or 'error'
+    error_message: Optional[str] = None
+
+
+class MultiTableCompareRequest(BaseModel):
+    """Request for batch multi-table schema comparison."""
+
+    source_connection_id: int
+    target_connection_id: int
+    source_tables: list[str]  # Source table names
+    target_tables: list[str]  # Target table names
+    table_mapping: Optional[dict[str, str]] = None  # Optional {source_table: target_table} mapping
+
+
+class MultiTableCompareResponse(BaseModel):
+    """Response for batch multi-table schema comparison."""
+
+    summary: list[TableCompareSummary] = Field(default_factory=list)
+    table_results: dict[str, SchemaDiffResponse] = Field(default_factory=dict)
+
+
+class DatabaseCompareRequest(BaseModel):
+    """Request for database-level comparison."""
+
+    source_connection_id: int
+    target_connection_id: int
+    exclude_patterns: list[str] = Field(default_factory=list)  # Patterns to exclude (supports wildcards)
+
+    def should_exclude_table(self, table_name: str) -> bool:
+        """Check if a table should be excluded based on patterns."""
+        for pattern in self.exclude_patterns:
+            # Convert wildcard pattern to regex
+            regex_pattern = pattern.replace('*', '.*').replace('?', '.')
+            if re.match(f'^{regex_pattern}$', table_name, re.IGNORECASE):
+                return True
+        return False
+
+
+class DatabaseCompareResponse(BaseModel):
+    """Response for database-level comparison."""
+
+    source_database: str
+    target_database: str
+    source_connection_name: str
+    target_connection_name: str
+    total_tables: int  # Total tables that could be compared
+    compared_tables: int  # Tables actually compared
+    tables_with_diffs: int  # Tables that have differences
+    table_summaries: list[TableCompareSummary] = Field(default_factory=list)
+    excluded_tables: list[str] = Field(default_factory=list)  # Tables excluded by pattern
+    unmatched_source_tables: list[str] = Field(default_factory=list)  # Source tables without matching target
+    unmatched_target_tables: list[str] = Field(default_factory=list)  # Target tables without matching source
 
 
 # ============= Data Comparison Schemas =============
@@ -169,7 +259,7 @@ class FieldDiffAPI(BaseModel):
     field_name: str
     source_value: Optional[Any] = None
     target_value: Optional[Any] = None
-    difference_type: str  # 'value', 'null', 'type', 'length'
+    diff_type: str  # 'value', 'null', 'type', 'length'
 
 
 class RowDiffAPI(BaseModel):
