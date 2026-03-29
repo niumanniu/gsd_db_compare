@@ -227,6 +227,8 @@ class DatabaseCompareResponse(BaseModel):
     target_database: str
     source_connection_name: str
     target_connection_name: str
+    source_connection_id: int
+    target_connection_id: int
     total_tables: int  # Total tables that could be compared
     compared_tables: int  # Tables actually compared
     tables_with_diffs: int  # Tables that have differences
