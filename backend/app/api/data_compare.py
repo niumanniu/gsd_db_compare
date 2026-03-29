@@ -1,5 +1,6 @@
 """Data comparison API endpoints."""
 
+import os
 from datetime import datetime
 from typing import Any
 
@@ -7,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from cryptography.fernet import Fernet
 
 from app.db.session import get_db_session
 from app.db.models import DbConnection, ComparisonTask
@@ -16,16 +18,30 @@ from app.schemas.api import (
     DataSummary,
     RowDiffAPI,
     FieldDiffAPI,
+    MultiTableDataCompareRequest,
+    MultiTableDataCompareResponse,
+    TableDataResult as TableDataResultSchema,
+    MultiTableDataSummary as MultiTableDataSummarySchema,
+    SchemaDataCompareRequest,
+    SchemaDataCompareResponse,
+    SchemaDataCompareSummary as SchemaDataCompareSummarySchema,
 )
 from app.comparison.data import DataComparator, DataDiffResult, RowDiff
+from app.comparison.multi_table import (
+    MultiTableDataComparator,
+    SchemaDataComparator,
+    TableDataResult,
+    MultiTableDataSummary,
+    SchemaDataCompareSummary,
+)
 from app.adapters import get_adapter
-
-from cryptography.fernet import Fernet
 
 router = APIRouter(prefix="/api/compare", tags=["data-compare"])
 
-# Same encryption key as connections.py (in production, use shared secrets)
-_ENCRYPTION_KEY = Fernet.generate_key()
+# Load encryption key from environment variable (same as connections.py)
+_ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "").encode()
+if not _ENCRYPTION_KEY:
+    raise RuntimeError("ENCRYPTION_KEY environment variable not set")
 _fernet = Fernet(_ENCRYPTION_KEY)
 
 
@@ -57,7 +73,7 @@ def convert_row_diff(row_diff: RowDiff) -> RowDiffAPI:
                 field_name=fd.field_name,
                 source_value=fd.source_value,
                 target_value=fd.target_value,
-                difference_type=fd.diff_type,
+                diff_type=fd.diff_type,
             )
             for fd in row_diff.field_diffs
         ],
@@ -368,7 +384,7 @@ async def get_comparison_task(
                         field_name=fd.get('field_name', ''),
                         source_value=fd.get('source_value'),
                         target_value=fd.get('target_value'),
-                        difference_type=fd.get('diff_type', 'value'),
+                        diff_type=fd.get('diff_type', 'value'),
                     )
                     for fd in d.get('field_diffs', [])
                 ],
@@ -380,3 +396,289 @@ async def get_comparison_task(
         has_more=summary_data.get('has_more', False),
         truncated=False,
     )
+
+
+# ============= Multi-Table Data Comparison Endpoints =============
+
+
+@router.post("/multi-table-data", response_model=MultiTableDataCompareResponse)
+async def compare_multi_table_data(
+    request: MultiTableDataCompareRequest,
+    db: AsyncSession = Depends(get_db_session),
+) -> MultiTableDataCompareResponse:
+    """Compare data across multiple selected tables.
+
+    Args:
+        request: Multi-table comparison request with table lists
+        db: AsyncSession dependency
+
+    Returns:
+        MultiTableDataCompareResponse with aggregated results
+
+    Error handling:
+        - 400: Invalid request, connections not found
+        - 401: Authentication failed
+        - 503: Database connection failed
+        - 504: Comparison timeout
+    """
+    try:
+        # Fetch both connections from database
+        result = await db.execute(
+            select(DbConnection).where(
+                DbConnection.id.in_([request.source_connection_id, request.target_connection_id])
+            )
+        )
+        connections = result.scalars().all()
+
+        if len(connections) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One or both connections not found",
+            )
+
+        # Map connections by ID
+        conn_map = {conn.id: conn for conn in connections}
+        source_conn = conn_map[request.source_connection_id]
+        target_conn = conn_map[request.target_connection_id]
+
+        # Create adapters for both connections
+        source_config = {
+            'host': source_conn.host,
+            'port': source_conn.port,
+            'database': source_conn.database,
+            'username': source_conn.username,
+            'password': decrypt_password(source_conn.password_encrypted),
+        }
+
+        target_config = {
+            'host': target_conn.host,
+            'port': target_conn.port,
+            'database': target_conn.database,
+            'username': target_conn.username,
+            'password': decrypt_password(target_conn.password_encrypted),
+        }
+
+        try:
+            source_adapter = get_adapter(source_conn.db_type, source_config)
+            target_adapter = get_adapter(target_conn.db_type, target_config)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Failed to connect to database: {str(e)}",
+            )
+
+        try:
+            # Build table mappings
+            if request.table_mapping:
+                # Use provided mapping
+                table_mappings = [
+                    (src, request.table_mapping.get(src, tgt))
+                    for src, tgt in zip(request.source_tables, request.target_tables)
+                ]
+            else:
+                # Match by index (assumes same order)
+                table_mappings = list(zip(request.source_tables, request.target_tables))
+
+            # Create comparator and run comparison
+            comparator = MultiTableDataComparator(
+                source_adapter=source_adapter,
+                target_adapter=target_adapter,
+                source_schema=request.source_schema,
+                target_schema=request.target_schema,
+                mode=request.mode,
+                threshold=request.threshold,
+                sample_size=request.sample_size,
+                timeout_per_table=request.timeout_per_table,
+            )
+
+            result = comparator.compare(table_mappings)
+
+            # Convert to Pydantic schema
+            return MultiTableDataCompareResponse(
+                summary=MultiTableDataSummarySchema(
+                    total_tables=result.summary.total_tables,
+                    compared_tables=result.summary.compared_tables,
+                    identical_tables=result.summary.identical_tables,
+                    tables_with_diffs=result.summary.tables_with_diffs,
+                    error_tables=result.summary.error_tables,
+                    total_rows_compared=result.summary.total_rows_compared,
+                    total_diffs_found=result.summary.total_diffs_found,
+                    elapsed_time_seconds=result.summary.elapsed_time_seconds,
+                ),
+                table_results=[
+                    TableDataResultSchema(
+                        source_table=tr.source_table,
+                        target_table=tr.target_table,
+                        status=tr.status,
+                        source_row_count=tr.source_row_count,
+                        target_row_count=tr.target_row_count,
+                        diff_count=tr.diff_count,
+                        diff_percentage=tr.diff_percentage,
+                        mode_used=tr.mode_used,
+                        is_identical=tr.is_identical,
+                        error_message=tr.error_message,
+                        source_hash=tr.source_hash,
+                        target_hash=tr.target_hash,
+                    )
+                    for tr in result.table_results
+                ],
+            )
+
+        finally:
+            source_adapter.disconnect()
+            target_adapter.disconnect()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Multi-table comparison failed: {str(e)}",
+        )
+
+
+# ============= Schema-Level Data Comparison Endpoints =============
+
+
+@router.post("/schema-data", response_model=SchemaDataCompareResponse)
+async def compare_schema_data(
+    request: SchemaDataCompareRequest,
+    db: AsyncSession = Depends(get_db_session),
+) -> SchemaDataCompareResponse:
+    """Compare data across entire schema (all tables).
+
+    Args:
+        request: Schema-level comparison request with filter options
+        db: AsyncSession dependency
+
+    Returns:
+        SchemaDataCompareResponse with complete results
+
+    Error handling:
+        - 400: Invalid request, connections not found
+        - 401: Authentication failed
+        - 503: Database connection failed
+        - 504: Comparison timeout
+    """
+    try:
+        # Fetch both connections from database
+        result = await db.execute(
+            select(DbConnection).where(
+                DbConnection.id.in_([request.source_connection_id, request.target_connection_id])
+            )
+        )
+        connections = result.scalars().all()
+
+        if len(connections) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One or both connections not found",
+            )
+
+        # Map connections by ID
+        conn_map = {conn.id: conn for conn in connections}
+        source_conn = conn_map[request.source_connection_id]
+        target_conn = conn_map[request.target_connection_id]
+
+        # Create adapters for both connections
+        source_config = {
+            'host': source_conn.host,
+            'port': source_conn.port,
+            'database': source_conn.database,
+            'username': source_conn.username,
+            'password': decrypt_password(source_conn.password_encrypted),
+        }
+
+        target_config = {
+            'host': target_conn.host,
+            'port': target_conn.port,
+            'database': target_conn.database,
+            'username': target_conn.username,
+            'password': decrypt_password(target_conn.password_encrypted),
+        }
+
+        try:
+            source_adapter = get_adapter(source_conn.db_type, source_config)
+            target_adapter = get_adapter(target_conn.db_type, target_config)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Failed to connect to database: {str(e)}",
+            )
+
+        try:
+            # Create schema comparator and run comparison
+            comparator = SchemaDataComparator(
+                source_adapter=source_adapter,
+                target_adapter=target_adapter,
+                source_schema=request.source_schema,
+                target_schema=request.target_schema,
+                source_connection_name=source_conn.name,
+                target_connection_name=target_conn.name,
+                mode=request.mode,
+                threshold=request.threshold,
+                sample_size=request.sample_size,
+                timeout_per_table=request.timeout_per_table,
+            )
+
+            result = comparator.compare(
+                exclude_patterns=request.exclude_patterns,
+                include_patterns=request.include_patterns,
+                only_common_tables=request.only_common_tables,
+            )
+
+            # Convert to Pydantic schema
+            return SchemaDataCompareResponse(
+                summary=SchemaDataCompareSummarySchema(
+                    source_schema=result.summary.source_schema,
+                    target_schema=result.summary.target_schema,
+                    source_connection_name=result.summary.source_connection_name,
+                    target_connection_name=result.summary.target_connection_name,
+                    total_source_tables=result.summary.total_source_tables,
+                    total_target_tables=result.summary.total_target_tables,
+                    common_tables=result.summary.common_tables,
+                    unmatched_source_tables=result.summary.unmatched_source_tables,
+                    unmatched_target_tables=result.summary.unmatched_target_tables,
+                    compared_tables=result.summary.compared_tables,
+                    identical_tables=result.summary.identical_tables,
+                    tables_with_diffs=result.summary.tables_with_diffs,
+                    error_tables=result.summary.error_tables,
+                    total_rows_source=result.summary.total_rows_source,
+                    total_rows_target=result.summary.total_rows_target,
+                    total_diffs_found=result.summary.total_diffs_found,
+                    overall_diff_percentage=result.summary.overall_diff_percentage,
+                    elapsed_time_seconds=result.summary.elapsed_time_seconds,
+                ),
+                table_results=[
+                    TableDataResultSchema(
+                        source_table=tr.source_table,
+                        target_table=tr.target_table,
+                        status=tr.status,
+                        source_row_count=tr.source_row_count,
+                        target_row_count=tr.target_row_count,
+                        diff_count=tr.diff_count,
+                        diff_percentage=tr.diff_percentage,
+                        mode_used=tr.mode_used,
+                        is_identical=tr.is_identical,
+                        error_message=tr.error_message,
+                        source_hash=tr.source_hash,
+                        target_hash=tr.target_hash,
+                    )
+                    for tr in result.table_results
+                ],
+                unmatched_source_tables=result.unmatched_source_tables,
+                unmatched_target_tables=result.unmatched_target_tables,
+                excluded_tables=result.excluded_tables,
+            )
+
+        finally:
+            source_adapter.disconnect()
+            target_adapter.disconnect()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Schema-level comparison failed: {str(e)}",
+        )

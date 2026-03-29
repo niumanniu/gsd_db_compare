@@ -294,3 +294,135 @@ class DataCompareResponse(BaseModel):
     diffs: list[RowDiffAPI] = Field(default_factory=list)
     has_more: bool = False
     truncated: bool = False  # True if diffs exceeded max return limit
+
+
+# ============= Multi-Table Data Comparison Schemas =============
+
+
+class MultiTableDataCompareRequest(BaseModel):
+    """Request schema for multi-table data comparison."""
+
+    source_connection_id: int = Field(..., description="Source database connection ID")
+    target_connection_id: int = Field(..., description="Target database connection ID")
+    source_schema: str = Field(..., description="Source schema name")
+    target_schema: str = Field(..., description="Target schema name")
+    source_tables: list[str] = Field(..., description="List of source table names")
+    target_tables: list[str] = Field(..., description="List of target table names")
+    table_mapping: Optional[dict[str, str]] = Field(
+        None,
+        description="Optional mapping {source_table: target_table}",
+    )
+
+    # Comparison parameters
+    mode: str = Field(default="auto", description="Comparison mode: auto|full|hash|sample")
+    threshold: Optional[int] = Field(default=100000, description="Row count threshold for auto mode")
+    sample_size: Optional[int] = Field(default=1000, description="Sample size for sample mode")
+    timeout_per_table: Optional[int] = Field(default=300, description="Timeout in seconds per table")
+
+
+class TableDataResult(BaseModel):
+    """Result of single table comparison."""
+
+    source_table: str
+    target_table: str
+    status: str  # success|error|skipped
+    source_row_count: int
+    target_row_count: int
+    diff_count: int
+    diff_percentage: Optional[float]
+    mode_used: str
+    is_identical: bool
+    error_message: Optional[str] = None
+    source_hash: Optional[str] = None
+    target_hash: Optional[str] = None
+
+
+class MultiTableDataSummary(BaseModel):
+    """Summary statistics for multi-table comparison."""
+
+    total_tables: int
+    compared_tables: int
+    identical_tables: int
+    tables_with_diffs: int
+    error_tables: int
+    total_rows_compared: int
+    total_diffs_found: int
+    elapsed_time_seconds: float
+
+
+class MultiTableDataCompareResponse(BaseModel):
+    """Complete multi-table comparison response."""
+
+    summary: MultiTableDataSummary
+    table_results: list[TableDataResult] = Field(default_factory=list)
+
+
+# ============= Schema-Level Data Comparison Schemas =============
+
+
+class SchemaDataCompareRequest(BaseModel):
+    """Request schema for schema-level data comparison."""
+
+    source_connection_id: int = Field(..., description="Source database connection ID")
+    target_connection_id: int = Field(..., description="Target database connection ID")
+    source_schema: str = Field(..., description="Source schema name")
+    target_schema: str = Field(..., description="Target schema name")
+
+    # Filter options
+    exclude_patterns: list[str] = Field(
+        default_factory=list,
+        description="Patterns to exclude (supports * wildcard)",
+    )
+    include_patterns: list[str] = Field(
+        default_factory=list,
+        description="Patterns to include (if provided, only these match)",
+    )
+    only_common_tables: bool = Field(
+        default=True,
+        description="Only compare tables present in both schemas",
+    )
+
+    # Comparison parameters
+    mode: str = Field(default="hash", description="Comparison mode (default: hash for fast screening)")
+    threshold: Optional[int] = Field(default=100000, description="Row count threshold for auto mode")
+    sample_size: Optional[int] = Field(default=1000, description="Sample size for sample mode")
+    timeout_per_table: Optional[int] = Field(default=300, description="Timeout in seconds per table")
+
+
+class SchemaDataCompareSummary(BaseModel):
+    """Summary statistics for schema-level comparison."""
+
+    source_schema: str
+    target_schema: str
+    source_connection_name: str
+    target_connection_name: str
+
+    # Table statistics
+    total_source_tables: int
+    total_target_tables: int
+    common_tables: int
+    unmatched_source_tables: int
+    unmatched_target_tables: int
+
+    # Comparison results
+    compared_tables: int
+    identical_tables: int
+    tables_with_diffs: int
+    error_tables: int
+
+    # Data volume
+    total_rows_source: int
+    total_rows_target: int
+    total_diffs_found: int
+    overall_diff_percentage: Optional[float]
+    elapsed_time_seconds: float
+
+
+class SchemaDataCompareResponse(BaseModel):
+    """Complete schema-level comparison response."""
+
+    summary: SchemaDataCompareSummary
+    table_results: list[TableDataResult] = Field(default_factory=list)
+    unmatched_source_tables: list[str] = Field(default_factory=list)
+    unmatched_target_tables: list[str] = Field(default_factory=list)
+    excluded_tables: list[str] = Field(default_factory=list)

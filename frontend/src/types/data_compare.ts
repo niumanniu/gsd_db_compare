@@ -103,3 +103,102 @@ export interface DatabaseCompareResponse {
   unmatched_source_tables: string[];
   unmatched_target_tables: string[];
 }
+
+// ============ Multi-Table Data Comparison Types ============
+
+/** Request for multi-table data comparison. */
+export interface MultiTableDataCompareRequest {
+  source_connection_id: number;
+  target_connection_id: number;
+  source_schema: string;
+  target_schema: string;
+  source_tables: string[];
+  target_tables: string[];
+  table_mapping?: Record<string, string>;
+  mode?: 'auto' | 'full' | 'hash' | 'sample';
+  threshold?: number;
+  sample_size?: number;
+  timeout_per_table?: number;
+}
+
+/** Result of single table data comparison. */
+export interface TableDataResult {
+  source_table: string;
+  target_table: string;
+  status: 'success' | 'error' | 'skipped';
+  source_row_count: number;
+  target_row_count: number;
+  diff_count: number;
+  diff_percentage: number | null;
+  mode_used: string;
+  is_identical: boolean;
+  error_message?: string;
+  source_hash?: string;
+  target_hash?: string;
+}
+
+/** Summary statistics for multi-table data comparison. */
+export interface MultiTableDataSummary {
+  total_tables: number;
+  compared_tables: number;
+  identical_tables: number;
+  tables_with_diffs: number;
+  error_tables: number;
+  total_rows_compared: number;
+  total_diffs_found: number;
+  elapsed_time_seconds: number;
+}
+
+/** Response for multi-table data comparison. */
+export interface MultiTableDataCompareResponse {
+  summary: MultiTableDataSummary;
+  table_results: TableDataResult[];
+}
+
+// ============ Schema-Level Data Comparison Types ============
+
+/** Request for schema-level data comparison. */
+export interface SchemaDataCompareRequest {
+  source_connection_id: number;
+  target_connection_id: number;
+  source_schema: string;
+  target_schema: string;
+  exclude_patterns?: string[];
+  include_patterns?: string[];
+  only_common_tables?: boolean;
+  mode?: 'auto' | 'full' | 'hash' | 'sample';
+  threshold?: number;
+  sample_size?: number;
+  timeout_per_table?: number;
+}
+
+/** Summary statistics for schema-level comparison. */
+export interface SchemaDataCompareSummary {
+  source_schema: string;
+  target_schema: string;
+  source_connection_name: string;
+  target_connection_name: string;
+  total_source_tables: number;
+  total_target_tables: number;
+  common_tables: number;
+  unmatched_source_tables: number;
+  unmatched_target_tables: number;
+  compared_tables: number;
+  identical_tables: number;
+  tables_with_diffs: number;
+  error_tables: number;
+  total_rows_source: number;
+  total_rows_target: number;
+  total_diffs_found: number;
+  overall_diff_percentage: number | null;
+  elapsed_time_seconds: number;
+}
+
+/** Response for schema-level data comparison. */
+export interface SchemaDataCompareResponse {
+  summary: SchemaDataCompareSummary;
+  table_results: TableDataResult[];
+  unmatched_source_tables: string[];
+  unmatched_target_tables: string[];
+  excluded_tables: string[];
+}
