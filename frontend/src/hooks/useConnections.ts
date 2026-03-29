@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../api/client';
-import type { Connection, ConnectionCreate } from '../types';
+import type { Connection, ConnectionCreate, SchemaInfo } from '../types';
 
 export function useConnections() {
   const queryClient = useQueryClient();
@@ -28,13 +28,25 @@ export function useConnections() {
     mutationFn: (id: number) => apiClient.get(`/api/connections/${id}/tables`).then(r => r.data),
   });
 
+  const getSchemasMutation = useMutation({
+    mutationFn: (id: number) => apiClient.get(`/api/connections/${id}/schemas`).then(r => r.data),
+  });
+
+  const testConnectionMutation = useMutation({
+    mutationFn: (id: number) => apiClient.get(`/api/connections/${id}/test`).then(r => r.data),
+  });
+
   return {
     connections: connections || [],
     isLoading,
     createConnection: createMutation.mutateAsync,
     deleteConnection: deleteMutation.mutateAsync,
     getTables: getTablesMutation.mutateAsync,
+    getSchemas: getSchemasMutation.mutateAsync,
+    testConnection: testConnectionMutation.mutateAsync,
     isCreating: createMutation.isPending,
     isDeleting: deleteMutation.isPending,
+    isTesting: testConnectionMutation.isPending,
+    isFetchingSchemas: getSchemasMutation.isPending,
   };
 }
