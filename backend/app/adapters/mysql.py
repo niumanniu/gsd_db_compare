@@ -79,13 +79,16 @@ class MySQLAdapter(DatabaseAdapter):
         finally:
             self.disconnect()
 
-    def get_tables(self) -> list[dict]:
+    def get_tables(self, schema: str = None) -> list[dict]:
         """List all tables in the database.
 
         Queries information_schema.TABLES for table metadata.
 
+        Args:
+            schema: Optional schema name to filter tables. If None, uses connection database.
+
         Returns:
-            List of dicts with table_name, table_type, row_count, create_time
+            List of dicts with table_name, table_type, row_count, create_time, schema
         """
         if not self._connection:
             self.connect()
@@ -96,12 +99,15 @@ class MySQLAdapter(DatabaseAdapter):
                 TABLE_NAME as table_name,
                 TABLE_TYPE as table_type,
                 TABLE_ROWS as row_count,
-                CREATE_TIME as create_time
+                CREATE_TIME as create_time,
+                TABLE_SCHEMA as schema_name
             FROM information_schema.TABLES
             WHERE TABLE_SCHEMA = %s
             ORDER BY TABLE_NAME
         """
-        cursor.execute(query, (self.config['database'],))
+        # Use provided schema or fall back to connection database
+        schema_name = schema if schema is not None else self.config['database']
+        cursor.execute(query, (schema_name,))
         tables = cursor.fetchall()
         cursor.close()
         return tables
@@ -138,13 +144,28 @@ class MySQLAdapter(DatabaseAdapter):
         Uses SQLAlchemy inspect() to reflect table structure.
 
         Args:
-            table_name: Name of table to inspect
+            table_name: Name of table to inspect. Can be simple name (e.g., 'users')
+                        or schema-qualified name (e.g., 'db_source1.users').
 
         Returns:
             Dict with columns, indexes, primary_key, foreign_keys, unique_constraints
         """
         engine = self._get_engine()
         insp = inspect(engine)
+
+        # Handle schema-qualified table names
+        # SQLAlchemy's inspect needs the schema parameter for cross-schema reflection
+        schema_param = None
+        actual_table_name = table_name
+
+        if '.' in table_name:
+            parts = table_name.split('.', 1)
+            schema_param = parts[0]
+            actual_table_name = parts[1]
+
+            # If schema matches connection database, use simple table name
+            if schema_param == self.config.get('database', ''):
+                schema_param = None
 
         metadata = {
             'table_name': table_name,
@@ -155,8 +176,8 @@ class MySQLAdapter(DatabaseAdapter):
             'unique_constraints': [],
         }
 
-        # Get columns
-        columns = insp.get_columns(table_name)
+        # Get columns - pass schema parameter separately
+        columns = insp.get_columns(actual_table_name, schema=schema_param)
         for col in columns:
             metadata['columns'].append({
                 'name': col['name'],
@@ -167,7 +188,7 @@ class MySQLAdapter(DatabaseAdapter):
             })
 
         # Get indexes
-        indexes = insp.get_indexes(table_name)
+        indexes = insp.get_indexes(actual_table_name, schema=schema_param)
         for idx in indexes:
             metadata['indexes'].append({
                 'name': idx['name'],
@@ -177,7 +198,7 @@ class MySQLAdapter(DatabaseAdapter):
             })
 
         # Get primary key
-        pk_constraint = insp.get_pk_constraint(table_name)
+        pk_constraint = insp.get_pk_constraint(actual_table_name, schema=schema_param)
         if pk_constraint and pk_constraint.get('constrained_columns'):
             metadata['primary_key'] = {
                 'name': pk_constraint.get('name', 'PRIMARY'),
@@ -185,7 +206,7 @@ class MySQLAdapter(DatabaseAdapter):
             }
 
         # Get foreign keys
-        fkeys = insp.get_foreign_keys(table_name)
+        fkeys = insp.get_foreign_keys(actual_table_name, schema=schema_param)
         for fk in fkeys:
             metadata['foreign_keys'].append({
                 'name': fk.get('name'),
@@ -196,7 +217,7 @@ class MySQLAdapter(DatabaseAdapter):
             })
 
         # Get unique constraints
-        unique_constraints = insp.get_unique_constraints(table_name)
+        unique_constraints = insp.get_unique_constraints(actual_table_name, schema=schema_param)
         for uc in unique_constraints:
             metadata['unique_constraints'].append({
                 'name': uc.get('name'),

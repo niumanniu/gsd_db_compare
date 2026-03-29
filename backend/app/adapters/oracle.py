@@ -89,7 +89,7 @@ class OracleAdapter(DatabaseAdapter):
         Queries ALL_TABLES for table metadata.
 
         Returns:
-            List of dicts with table_name, table_type, row_count, create_time
+            List of dicts with table_name, table_type, row_count, create_time, schema
         """
         if not self._connection:
             self.connect()
@@ -101,13 +101,14 @@ class OracleAdapter(DatabaseAdapter):
                 TABLE_NAME as table_name,
                 'TABLE' as table_type,
                 NUM_ROWS as row_count,
-                CREATED as create_time
+                CREATED as create_time,
+                OWNER as schema
             FROM ALL_TABLES
             WHERE OWNER = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
             ORDER BY TABLE_NAME
         """
         cursor.execute(query)
-        columns = ['table_name', 'table_type', 'row_count', 'create_time']
+        columns = ['table_name', 'table_type', 'row_count', 'create_time', 'schema']
         tables = []
         for row in cursor.fetchall():
             table_dict = {}

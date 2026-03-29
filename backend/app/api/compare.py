@@ -358,9 +358,13 @@ async def compare_databases(
     target_adapter = get_adapter(target_conn.db_type, target_config)
 
     try:
-        # Get all tables from both databases
-        source_tables_result = source_adapter.get_tables()
-        target_tables_result = target_adapter.get_tables()
+        # Get all tables from both databases using selected schemas
+        # Use provided schema parameters or fall back to connection's default database
+        source_schema_name = request.source_schema or source_conn.database
+        target_schema_name = request.target_schema or target_conn.database
+
+        source_tables_result = source_adapter.get_tables(schema=source_schema_name)
+        target_tables_result = target_adapter.get_tables(schema=target_schema_name)
 
         source_table_names = [t['table_name'] for t in source_tables_result]
         target_table_names = [t['table_name'] for t in target_tables_result]
@@ -425,8 +429,8 @@ async def compare_databases(
                 ))
 
         return DatabaseCompareResponse(
-            source_database=source_conn.database,
-            target_database=target_conn.database,
+            source_database=source_schema_name,
+            target_database=target_schema_name,
             source_connection_name=source_conn.name,
             target_connection_name=target_conn.name,
             source_connection_id=source_conn.id,

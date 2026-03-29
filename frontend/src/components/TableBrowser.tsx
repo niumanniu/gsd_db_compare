@@ -44,6 +44,8 @@ interface TableBrowserProps {
   sourceSchemas?: SchemaInfo[];
   targetSchemas?: SchemaInfo[];
   isFetchingSchemas?: boolean;
+  // Context type - determines the title
+  context?: 'schema' | 'data';
 }
 
 export const TableBrowser: React.FC<TableBrowserProps> = ({
@@ -80,6 +82,7 @@ export const TableBrowser: React.FC<TableBrowserProps> = ({
   sourceSchemas,
   targetSchemas,
   isFetchingSchemas,
+  context = 'schema',
 }) => {
   const [excludeInput, setExcludeInput] = useState('');
 
@@ -154,33 +157,35 @@ export const TableBrowser: React.FC<TableBrowserProps> = ({
           fontWeight: 600,
           color: 'rgba(0, 0, 0, 0.88)',
         }}>
-          Schema Comparison
+          {context === 'schema' ? 'Schema Comparison' : 'Single Table Data Comparison'}
         </Typography.Title>
 
-        {/* Mode Switcher */}
-        <Space size="small">
-          <Tag
-            color={compareMode === 'single' ? 'blue' : 'default'}
-            style={{ cursor: 'pointer' }}
-            onClick={() => onCompareModeChange?.('single')}
-          >
-            Single Table
-          </Tag>
-          <Tag
-            color={compareMode === 'multi' ? 'blue' : 'default'}
-            style={{ cursor: 'pointer' }}
-            onClick={() => onCompareModeChange?.('multi')}
-          >
-            Multi Table
-          </Tag>
-          <Tag
-            color={compareMode === 'database' ? 'blue' : 'default'}
-            style={{ cursor: 'pointer' }}
-            onClick={() => onCompareModeChange?.('database')}
-          >
-            Database Level
-          </Tag>
-        </Space>
+        {/* Mode Switcher - Only show in schema comparison context */}
+        {context === 'schema' && (
+          <Space size="small">
+            <Tag
+              color={compareMode === 'single' ? 'blue' : 'default'}
+              style={{ cursor: 'pointer' }}
+              onClick={() => onCompareModeChange?.('single')}
+            >
+              Single Table
+            </Tag>
+            <Tag
+              color={compareMode === 'multi' ? 'blue' : 'default'}
+              style={{ cursor: 'pointer' }}
+              onClick={() => onCompareModeChange?.('multi')}
+            >
+              Multi Table
+            </Tag>
+            <Tag
+              color={compareMode === 'database' ? 'blue' : 'default'}
+              style={{ cursor: 'pointer' }}
+              onClick={() => onCompareModeChange?.('database')}
+            >
+              Database Level
+            </Tag>
+          </Space>
+        )}
       </div>
 
       {/* Connection Selection (same for all modes) */}

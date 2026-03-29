@@ -149,7 +149,13 @@ export const SchemaDiffViewer: React.FC<SchemaDiffViewerProps> = ({
   return (
     <div style={{ marginTop: 24 }}>
       {/* Database Info Header */}
-      <div style={{ marginBottom: 16, padding: 12, background: '#e6f7ff', borderRadius: 8, border: '1px solid #91d5ff' }}>
+      <div style={{
+        marginBottom: 16,
+        padding: 16,
+        background: '#e6f4ff',
+        borderRadius: 8,
+        border: '1px solid #bae0ff',
+      }}>
         <Text strong>Comparison: </Text>
         <Tag color="blue">{sourceDbType?.toUpperCase() || 'MySQL'}</Tag>
         <Text type="secondary"> {sourceDbName || 'Unknown'} </Text>
@@ -163,7 +169,11 @@ export const SchemaDiffViewer: React.FC<SchemaDiffViewerProps> = ({
         </div>
       </div>
 
-      <Typography.Title level={4}>Comparison Results</Typography.Title>
+      <Typography.Title level={4} style={{
+        marginBottom: 20,
+        fontSize: '16px',
+        fontWeight: 600,
+      }}>Comparison Results</Typography.Title>
 
       {/* Summary Cards */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
@@ -176,22 +186,29 @@ export const SchemaDiffViewer: React.FC<SchemaDiffViewerProps> = ({
               border: '1px solid',
               borderColor: item.count > 0 ? '#ffd591' : '#b7eb8f',
               borderRadius: 8,
-              minWidth: 150,
+              minWidth: 180,
+              boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03)',
             }}
           >
-            <div style={{ fontSize: 24, fontWeight: 'bold', color: item.count > 0 ? '#fa8c16' : '#52c41a' }}>
+            <div style={{ fontSize: 28, fontWeight: 700, color: item.count > 0 ? '#fa8c16' : '#52c41a' }}>
               {item.count}
             </div>
-            <div style={{ color: '#666' }}>{item.label}</div>
+            <div style={{ color: 'rgba(0, 0, 0, 0.65)', marginTop: 4, fontSize: 13 }}>{item.label}</div>
           </div>
         ))}
       </div>
 
       {/* Legend */}
-      <div style={{ marginBottom: 16 }}>
-        <Text strong>Legend: </Text>
-        <Tag color="green"><CheckCircleOutlined /> ADDED</Tag>
-        <Tag color="red"><CloseCircleOutlined /> REMOVED</Tag>
+      <div style={{
+        marginBottom: 16,
+        padding: 12,
+        backgroundColor: '#fafafa',
+        borderRadius: 6,
+        border: '1px solid #f0f0f0',
+      }}>
+        <Text strong style={{ marginRight: 12 }}>Legend: </Text>
+        <Tag color="green" style={{ marginRight: 8 }}><CheckCircleOutlined /> ADDED</Tag>
+        <Tag color="red" style={{ marginRight: 8 }}><CloseCircleOutlined /> REMOVED</Tag>
         <Tag color="gold"><DiffOutlined /> MODIFIED</Tag>
       </div>
 
@@ -259,7 +276,14 @@ export const SchemaDiffViewer: React.FC<SchemaDiffViewerProps> = ({
       </Collapse>
 
       {/* Overall Status */}
-      <div style={{ marginTop: 24, padding: 16, backgroundColor: diffResult.has_differences ? '#fff7e6' : '#f6ffed', borderRadius: 8 }}>
+      <div style={{
+        marginTop: 24,
+        padding: 16,
+        backgroundColor: diffResult.has_differences ? '#fff7e6' : '#f6ffed',
+        borderRadius: 8,
+        border: '1px solid',
+        borderColor: diffResult.has_differences ? '#ffd591' : '#b7eb8f',
+      }}>
         <Paragraph style={{ margin: 0 }}>
           <Text strong>
             {diffResult.has_differences ? '⚠️ Differences Found' : '✅ Schemas Match'}

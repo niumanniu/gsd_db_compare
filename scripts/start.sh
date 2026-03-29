@@ -112,6 +112,12 @@ start_backend() {
     mkdir -p "$PID_DIR" "$LOG_DIR"
     cd "$BACKEND_DIR"
 
+    # 加载 .env 环境变量
+    if [ -f ".env" ]; then
+        export $(grep -v '^#' .env | grep -v '^[[:space:]]*$' | xargs)
+        echo -e "${BLUE}已加载 .env 环境变量${NC}"
+    fi
+
     # 检查是否已在运行
     if [ -f "$PID_DIR/backend.pid" ]; then
         PID=$(cat "$PID_DIR/backend.pid")

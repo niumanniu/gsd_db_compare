@@ -1,19 +1,29 @@
 """FastAPI application main entry point."""
 
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import connections, compare, reports, data_compare
 from app.api import scheduled_tasks, history, critical_tables, notifications
+from app.db.session import init_database, get_session_factory
 from app.scheduler import get_scheduler_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown events."""
-    # Startup: Initialize and start scheduler
-    scheduler = get_scheduler_service()
+    # Startup: Initialize database
+    database_url = os.environ.get(
+        "DATABASE_URL",
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/gsd_db_compare"
+    )
+    init_database(database_url)
+
+    # Initialize and start scheduler
+    session_factory = get_session_factory()
+    scheduler = get_scheduler_service(session_factory)
     scheduler.start()
     await scheduler.load_persisted_tasks()
     print("Scheduler started successfully")

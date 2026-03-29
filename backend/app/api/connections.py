@@ -145,11 +145,18 @@ async def delete_connection(
 @router.get("/{conn_id}/tables", response_model=List[TableInfo])
 async def get_connection_tables(
     conn_id: int,
+    schema: str = None,
     db: AsyncSession = Depends(get_db_session),
 ) -> List[dict]:
     """Fetch table list from a database connection.
 
     Connects to the database using stored credentials and retrieves table metadata.
+
+    Args:
+        conn_id: Connection ID
+        schema: Optional schema name to filter tables (for MySQL database/schema).
+                If not provided or empty, uses the connection's default database.
+        db: AsyncSession dependency
     """
     # Fetch connection from database
     result = await db.execute(select(DbConnection).where(DbConnection.id == conn_id))
@@ -160,6 +167,10 @@ async def get_connection_tables(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Connection {conn_id} not found",
         )
+
+    # Normalize schema parameter - treat empty strings and 'undefined' as None
+    if not schema or schema.lower() == 'undefined':
+        schema = None
 
     # Create adapter with decrypted password
     config = {
@@ -173,7 +184,7 @@ async def get_connection_tables(
     adapter = MySQLAdapter(config)
 
     try:
-        tables = adapter.get_tables()
+        tables = adapter.get_tables(schema=schema)
         return tables
     except Exception as e:
         raise HTTPException(

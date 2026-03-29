@@ -244,9 +244,20 @@ class MultiTableDataComparator:
             TableDataResult with comparison outcome
         """
         try:
-            # Build full table names with schema prefix
-            full_source_table = f"{self.source_schema}.{source_table}"
-            full_target_table = f"{self.target_schema}.{target_table}"
+            # Build full table names with schema prefix only if needed
+            # If the connection's database matches the schema, use simple table name
+            source_db = self.source_adapter.config.get('database', '')
+            target_db = self.target_adapter.config.get('database', '')
+
+            if source_db == self.source_schema:
+                full_source_table = source_table
+            else:
+                full_source_table = f"{self.source_schema}.{source_table}"
+
+            if target_db == self.target_schema:
+                full_target_table = target_table
+            else:
+                full_target_table = f"{self.target_schema}.{target_table}"
 
             # Create comparator for single table comparison
             comparator = DataComparator(
@@ -279,6 +290,8 @@ class MultiTableDataComparator:
             )
 
         except Exception as e:
+            import logging
+            logging.error(f"Error comparing tables {source_table} and {target_table}: {str(e)}", exc_info=True)
             return TableDataResult(
                 source_table=source_table,
                 target_table=target_table,
@@ -472,11 +485,35 @@ class SchemaDataComparator:
         Returns:
             List of table names
         """
-        # Use adapter's get_tables method
-        # Note: adapter may need schema parameter
-        tables = adapter.get_tables()
-        # Filter by schema if needed
-        return [t['table_name'] for t in tables if t.get('schema') == schema or schema is None]
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Use adapter's get_tables method with schema parameter
+        # MySQL adapter supports get_tables(schema) for cross-schema queries
+        # Oracle adapter queries current schema only (no parameter needed)
+        try:
+            # Try calling with schema parameter first (MySQL supports this)
+            tables = adapter.get_tables(schema)
+            logger.debug(f"get_tables({schema}) returned {len(tables)} tables")
+        except TypeError as e:
+            # Fallback for adapters that don't support schema parameter (e.g., Oracle)
+            logger.debug(f"get_tables({schema}) raised TypeError, falling back to get_tables(): {e}")
+            tables = adapter.get_tables()
+        except Exception as e:
+            # Log unexpected errors
+            logger.error(f"get_tables({schema}) raised unexpected error: {e}")
+            tables = adapter.get_tables()
+
+        # Filter by schema - handle both 'schema' and 'schema_name' field names
+        filtered_tables = []
+        for t in tables:
+            # Check if table matches the requested schema
+            table_schema = t.get('schema') or t.get('schema_name')
+            if table_schema == schema or table_schema is None:
+                filtered_tables.append(t['table_name'])
+
+        logger.debug(f"Filtered to {len(filtered_tables)} tables for schema {schema}")
+        return filtered_tables
 
     def _apply_filters(
         self,

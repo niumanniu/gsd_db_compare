@@ -1,5 +1,6 @@
 """API endpoints for notification settings management."""
 
+import os
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, status
@@ -17,8 +18,10 @@ from app.schemas.notifications import (
 
 router = APIRouter(prefix="/api/notification-settings", tags=["notification-settings"])
 
-# Encryption key for password encryption
-_ENCRYPTION_KEY = Fernet.generate_key()
+# Load encryption key from environment variable
+_ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "").encode()
+if not _ENCRYPTION_KEY:
+    raise RuntimeError("ENCRYPTION_KEY environment variable not set")
 _fernet = Fernet(_ENCRYPTION_KEY)
 
 

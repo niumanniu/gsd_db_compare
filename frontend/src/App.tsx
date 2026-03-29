@@ -191,6 +191,8 @@ function ComparisonView() {
       await compareDatabase({
         source_connection_id: sourceConnectionId,
         target_connection_id: targetConnectionId,
+        source_schema: sourceSchema || undefined,
+        target_schema: targetSchema || undefined,
         exclude_patterns: excludePatterns,
       });
       message.success('Database comparison complete!');
@@ -198,7 +200,7 @@ function ComparisonView() {
       console.error('Database comparison failed:', error);
       message.error('Failed to compare databases. Please check your connections.');
     }
-  }, [sourceConnectionId, targetConnectionId, excludePatterns, compareDatabase]);
+  }, [sourceConnectionId, targetConnectionId, sourceSchema, targetSchema, excludePatterns, compareDatabase]);
 
   const handleReset = useCallback(() => {
     resetComparison();
@@ -360,6 +362,7 @@ function ComparisonView() {
                 onCompare={handleCompare}
                 isComparing={isComparing}
                 isLoadingTables={isLoadingTables}
+                context="data"
               />
 
               {comparisonResult && (

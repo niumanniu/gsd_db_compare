@@ -1,5 +1,9 @@
 {
   "dependencies": {
     "@ant-design/charts": "^2.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "playwright": "^1.58.2"
   }
 }

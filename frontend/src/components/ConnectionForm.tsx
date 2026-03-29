@@ -34,13 +34,14 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({
       onFinish={handleFinish}
       autoComplete="off"
       size="large"
+      style={{ paddingTop: 8 }}
     >
       <Form.Item
         label="Connection Name"
         name="name"
         rules={[{ required: true, message: 'Please enter a connection name' }]}
       >
-        <Input placeholder="e.g., Production MySQL" />
+        <Input placeholder="e.g., Production MySQL" size="large" />
       </Form.Item>
 
       <Form.Item
@@ -49,7 +50,7 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({
         initialValue="mysql"
         rules={[{ required: true, message: 'Please select database type' }]}
       >
-        <Select>
+        <Select size="large">
           <Select.Option value="mysql">MySQL</Select.Option>
           <Select.Option value="oracle">Oracle</Select.Option>
         </Select>
@@ -60,7 +61,7 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({
         name="host"
         rules={[{ required: true, message: 'Please enter host' }]}
       >
-        <Input placeholder="e.g., localhost" />
+        <Input placeholder="e.g., localhost" size="large" />
       </Form.Item>
 
       <Form.Item
@@ -68,7 +69,7 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({
         name="port"
         rules={[{ required: true, message: 'Please enter port' }]}
       >
-        <InputNumber style={{ width: '100%' }} min={1} max={65535} placeholder="3306" />
+        <InputNumber style={{ width: '100%' }} size="large" min={1} max={65535} placeholder="3306" />
       </Form.Item>
 
       <Form.Item
@@ -76,7 +77,7 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({
         name="database"
         rules={[{ required: true, message: 'Please enter database name' }]}
       >
-        <Input placeholder="e.g., mydb" />
+        <Input placeholder="e.g., mydb" size="large" />
       </Form.Item>
 
       <Form.Item
@@ -84,7 +85,7 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({
         name="username"
         rules={[{ required: true, message: 'Please enter username' }]}
       >
-        <Input placeholder="e.g., root" />
+        <Input placeholder="e.g., root" size="large" />
       </Form.Item>
 
       <Form.Item
@@ -92,11 +93,11 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({
         name="password"
         rules={[{ required: true, message: 'Please enter password' }]}
       >
-        <Input.Password placeholder="Enter password" />
+        <Input.Password placeholder="Enter password" size="large" />
       </Form.Item>
 
-      <Form.Item>
-        <Button type="primary" htmlType="submit" loading={loading} block>
+      <Form.Item style={{ marginTop: 24 }}>
+        <Button type="primary" htmlType="submit" loading={loading} block size="large">
           {loading ? 'Testing & Creating...' : 'Create Connection'}
         </Button>
       </Form.Item>

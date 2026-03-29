@@ -84,6 +84,8 @@ export interface MultiTableCompareResponse {
 export interface DatabaseCompareRequest {
   source_connection_id: number;
   target_connection_id: number;
+  source_schema?: string;  // Optional schema (database) to compare
+  target_schema?: string;  // Optional schema (user) to compare
   exclude_patterns: string[];
 }
 

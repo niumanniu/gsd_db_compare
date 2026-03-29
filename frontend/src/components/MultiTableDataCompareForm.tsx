@@ -1,15 +1,18 @@
 import React, { useState, useCallback } from 'react';
-import { Form, Input, InputNumber, Select, Button, Checkbox, Card, Space, Typography, message, Alert } from 'antd';
+import { Form, Input, InputNumber, Select, Button, Checkbox, Card, Space, Typography, message, Alert, Row, Col, Tag, Modal } from 'antd';
 import type { MultiTableDataCompareRequest } from '../types/data_compare';
 import type { Connection, SchemaInfo, TableInfo } from '../types';
 import { useConnections } from '../hooks/useConnections';
 import { TableDataResultTable } from './TableDataResultTable';
 import { ComparisonProgress } from './ComparisonProgress';
+import { DataDiffViewer } from './DataDiffViewer';
 import apiClient from '../api/client';
 import {
   DatabaseOutlined,
   SwapOutlined,
   TableOutlined,
+  CheckCircleOutlined,
+  DiffOutlined,
 } from '@ant-design/icons';
 
 const { Text, Title } = Typography;
@@ -65,6 +68,11 @@ export const MultiTableDataCompareForm: React.FC<MultiTableDataCompareFormProps>
   const [targetTables, setTargetTables] = useState<TableInfo[]>([]);
   const [selectedSourceTables, setSelectedSourceTables] = useState<string[]>([]);
   const [selectedTargetTables, setSelectedTargetTables] = useState<string[]>([]);
+  const [selectedTableForDetail, setSelectedTableForDetail] = useState<{
+    sourceTable: string;
+    targetTable: string;
+  } | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
 
   const sourceConnectionId = Form.useWatch('source_connection_id', form);
   const targetConnectionId = Form.useWatch('target_connection_id', form);
@@ -102,20 +110,26 @@ export const MultiTableDataCompareForm: React.FC<MultiTableDataCompareFormProps>
           const response = await apiClient.get(`/api/connections/${sourceConnectionId}/tables`, {
             params: { schema: sourceSchema },
           });
-          setSourceTables(response.data);
+          setSourceTables(response.data || []);
         } catch (error) {
           console.error('Failed to fetch source tables:', error);
+          setSourceTables([]);
         }
+      } else {
+        setSourceTables([]);
       }
       if (targetConnectionId && targetSchema) {
         try {
           const response = await apiClient.get(`/api/connections/${targetConnectionId}/tables`, {
             params: { schema: targetSchema },
           });
-          setTargetTables(response.data);
+          setTargetTables(response.data || []);
         } catch (error) {
           console.error('Failed to fetch target tables:', error);
+          setTargetTables([]);
         }
+      } else {
+        setTargetTables([]);
       }
     };
     fetchTables();
@@ -132,6 +146,19 @@ export const MultiTableDataCompareForm: React.FC<MultiTableDataCompareFormProps>
 
   const handleTargetTableSelect = (tables: string[]) => {
     setSelectedTargetTables(tables);
+  };
+
+  const handleViewDetails = useCallback((tableResult: any) => {
+    setSelectedTableForDetail({
+      sourceTable: tableResult.source_table,
+      targetTable: tableResult.target_table,
+    });
+    setDetailModalOpen(true);
+  }, []);
+
+  const handleDetailModalClose = () => {
+    setDetailModalOpen(false);
+    setSelectedTableForDetail(null);
   };
 
   const handleSubmit = async (values: any) => {
@@ -190,71 +217,87 @@ export const MultiTableDataCompareForm: React.FC<MultiTableDataCompareFormProps>
         onFinish={handleSubmit}
         size="large"
       >
-        {/* Connection Selection */}
+        {/* Connection Selection - Unified Layout */}
         <Card
-          title={<><DatabaseOutlined /> Source Database</>}
           size="small"
           style={{ marginBottom: 16 }}
         >
-          <Form.Item
-            label="Connection"
-            name="source_connection_id"
-            rules={[{ required: true, message: 'Please select source connection' }]}
-          >
-            <Select placeholder="Select source connection">
-              {connections.map(conn => (
-                <Option key={conn.id} value={conn.id}>{conn.name} ({conn.db_type})</Option>
-              ))}
-            </Select>
-          </Form.Item>
+          <Row gutter={16} style={{ marginBottom: 20 }}>
+            <Col span={12}>
+              <Text strong style={{
+                display: 'block',
+                marginBottom: 8,
+                fontSize: '13px',
+                color: 'rgba(0, 0, 0, 0.65)',
+              }}>Source Connection</Text>
+              <Form.Item
+                name="source_connection_id"
+                rules={[{ required: true, message: 'Please select source connection' }]}
+              >
+                <Select
+                  style={{ width: '100%' }}
+                  placeholder="Select source connection"
+                  size="large"
+                >
+                  {connections.map(conn => (
+                    <Option key={conn.id} value={conn.id}>{conn.name} ({conn.db_type})</Option>
+                  ))}
+                </Select>
+              </Form.Item>
 
-          <Form.Item
-            label="Schema"
-            name="source_schema"
-            rules={[{ required: true, message: 'Please select source schema' }]}
-          >
-            <Select
-              placeholder="Select schema"
-              showSearch
-              filterOption={(input, option) =>
-                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-              }
-              options={sourceSchemas.map(s => ({ label: s.schema_name, value: s.schema_name }))}
-            />
-          </Form.Item>
-        </Card>
+              <Form.Item
+                label="Schema"
+                name="source_schema"
+                rules={[{ required: true, message: 'Please select source schema' }]}
+              >
+                <Select
+                  placeholder="Select schema"
+                  showSearch
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={sourceSchemas.map(s => ({ label: s.schema_name, value: s.schema_name }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Text strong style={{
+                display: 'block',
+                marginBottom: 8,
+                fontSize: '13px',
+                color: 'rgba(0, 0, 0, 0.65)',
+              }}>Target Connection</Text>
+              <Form.Item
+                name="target_connection_id"
+                rules={[{ required: true, message: 'Please select target connection' }]}
+              >
+                <Select
+                  style={{ width: '100%' }}
+                  placeholder="Select target connection"
+                  size="large"
+                >
+                  {connections.map(conn => (
+                    <Option key={conn.id} value={conn.id}>{conn.name} ({conn.db_type})</Option>
+                  ))}
+                </Select>
+              </Form.Item>
 
-        <Card
-          title={<><DatabaseOutlined /> Target Database</>}
-          size="small"
-          style={{ marginBottom: 16 }}
-        >
-          <Form.Item
-            label="Connection"
-            name="target_connection_id"
-            rules={[{ required: true, message: 'Please select target connection' }]}
-          >
-            <Select placeholder="Select target connection">
-              {connections.map(conn => (
-                <Option key={conn.id} value={conn.id}>{conn.name} ({conn.db_type})</Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            label="Schema"
-            name="target_schema"
-            rules={[{ required: true, message: 'Please select target schema' }]}
-          >
-            <Select
-              placeholder="Select schema"
-              showSearch
-              filterOption={(input, option) =>
-                (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-              }
-              options={targetSchemas.map(s => ({ label: s.schema_name, value: s.schema_name }))}
-            />
-          </Form.Item>
+              <Form.Item
+                label="Schema"
+                name="target_schema"
+                rules={[{ required: true, message: 'Please select target schema' }]}
+              >
+                <Select
+                  placeholder="Select schema"
+                  showSearch
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={targetSchemas.map(s => ({ label: s.schema_name, value: s.schema_name }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
         </Card>
 
         {/* Table Selection */}
@@ -263,8 +306,8 @@ export const MultiTableDataCompareForm: React.FC<MultiTableDataCompareFormProps>
           size="small"
           style={{ marginBottom: 16 }}
         >
-          <div style={{ display: 'flex', gap: 16 }}>
-            <div style={{ flex: 1 }}>
+          <Row gutter={16}>
+            <Col span={12}>
               <Text strong>Source Tables</Text>
               <div style={{ marginTop: 8, maxHeight: 300, overflow: 'auto', border: '1px solid #d9d9d9', borderRadius: 4, padding: 8 }}>
                 <Checkbox.Group
@@ -282,14 +325,19 @@ export const MultiTableDataCompareForm: React.FC<MultiTableDataCompareFormProps>
               <Text type="secondary" style={{ marginTop: 4, display: 'block' }}>
                 Selected: {selectedSourceTables.length} tables
               </Text>
-            </div>
+            </Col>
 
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <SwapOutlined style={{ fontSize: 24, color: '#999' }} />
-            </div>
+            <Col span={12} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ textAlign: 'center' }}>
+                <SwapOutlined style={{ fontSize: 24, color: '#999' }} />
+                <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>Compare</div>
+              </div>
+            </Col>
+          </Row>
 
-            <div style={{ flex: 1 }}>
-              <Text strong>Target Tables</Text>
+          <Row gutter={16} style={{ marginTop: 16 }}>
+            <Col span={12}>
+              <Text strong>Target Tables (auto-matched)</Text>
               <div style={{ marginTop: 8, maxHeight: 300, overflow: 'auto', border: '1px solid #d9d9d9', borderRadius: 4, padding: 8 }}>
                 <Checkbox.Group
                   value={selectedTargetTables}
@@ -311,8 +359,8 @@ export const MultiTableDataCompareForm: React.FC<MultiTableDataCompareFormProps>
               <Text type="secondary" style={{ marginTop: 4, display: 'block' }}>
                 Selected: {selectedTargetTables.length} tables
               </Text>
-            </div>
-          </div>
+            </Col>
+          </Row>
 
           {selectedSourceTables.length > 0 && selectedSourceTables.length !== selectedTargetTables.length && (
             <Alert
@@ -383,18 +431,25 @@ export const MultiTableDataCompareForm: React.FC<MultiTableDataCompareFormProps>
           </div>
         </Card>
 
-        <Form.Item style={{ marginBottom: 0 }}>
+        {/* Compare Button - Centered */}
+        <div style={{ textAlign: 'center', marginTop: 24, marginBottom: 16 }}>
           <Button
             type="primary"
             htmlType="submit"
             loading={loading}
             size="large"
-            block
             disabled={selectedSourceTables.length === 0}
+            icon={<SwapOutlined />}
+            style={{
+              padding: '12px 32px',
+              fontSize: '15px',
+              fontWeight: 500,
+              borderRadius: 6,
+            }}
           >
-            Start Comparison
+            {loading ? 'Comparing...' : 'Start Comparison'}
           </Button>
-        </Form.Item>
+        </div>
       </Form>
 
       {/* Progress and Results */}
@@ -409,13 +464,134 @@ export const MultiTableDataCompareForm: React.FC<MultiTableDataCompareFormProps>
           )}
 
           {result && (
-            <TableDataResultTable
-              summary={result.summary}
-              tableResults={result.table_results}
-            />
+            <>
+              {/* Database Info Header - Consistent with SchemaDiffViewer */}
+              <div style={{
+                marginBottom: 16,
+                padding: 16,
+                background: '#e6f4ff',
+                borderRadius: 8,
+                border: '1px solid #bae0ff',
+              }}>
+                <Text strong>Comparison: </Text>
+                <Tag color="blue">Multi-Table Data</Tag>
+                <Text type="secondary"> ({result.table_results.length} tables compared)</Text>
+              </div>
+
+              {/* Summary Cards - Consistent with SchemaDiffViewer */}
+              <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
+                <div
+                  style={{
+                    padding: '16px 24px',
+                    backgroundColor: result.summary.tables_with_diffs > 0 ? '#fff7e6' : '#f6ffed',
+                    border: '1px solid',
+                    borderColor: result.summary.tables_with_diffs > 0 ? '#ffd591' : '#b7eb8f',
+                    borderRadius: 8,
+                    minWidth: 180,
+                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03)',
+                  }}
+                >
+                  <div style={{ fontSize: 28, fontWeight: 700, color: result.summary.tables_with_diffs > 0 ? '#fa8c16' : '#52c41a' }}>
+                    {result.summary.identical_tables}
+                  </div>
+                  <div style={{ color: 'rgba(0, 0, 0, 0.65)', marginTop: 4, fontSize: 13 }}>Identical Tables</div>
+                </div>
+                <div
+                  style={{
+                    padding: '16px 24px',
+                    backgroundColor: result.summary.tables_with_diffs > 0 ? '#fff7e6' : '#f6ffed',
+                    border: '1px solid',
+                    borderColor: result.summary.tables_with_diffs > 0 ? '#ffd591' : '#b7eb8f',
+                    borderRadius: 8,
+                    minWidth: 180,
+                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03)',
+                  }}
+                >
+                  <div style={{ fontSize: 28, fontWeight: 700, color: result.summary.tables_with_diffs > 0 ? '#fa8c16' : '#52c41a' }}>
+                    {result.summary.tables_with_diffs}
+                  </div>
+                  <div style={{ color: 'rgba(0, 0, 0, 0.65)', marginTop: 4, fontSize: 13 }}>Tables with Diffs</div>
+                </div>
+                <div
+                  style={{
+                    padding: '16px 24px',
+                    backgroundColor: result.summary.error_tables > 0 ? '#fff7e6' : '#f6ffed',
+                    border: '1px solid',
+                    borderColor: result.summary.error_tables > 0 ? '#ffd591' : '#b7eb8f',
+                    borderRadius: 8,
+                    minWidth: 180,
+                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03)',
+                  }}
+                >
+                  <div style={{ fontSize: 28, fontWeight: 700, color: result.summary.error_tables > 0 ? '#fa8c16' : '#52c41a' }}>
+                    {result.summary.error_tables}
+                  </div>
+                  <div style={{ color: 'rgba(0, 0, 0, 0.65)', marginTop: 4, fontSize: 13 }}>Error Tables</div>
+                </div>
+                <div
+                  style={{
+                    padding: '16px 24px',
+                    backgroundColor: '#f5f5f5',
+                    border: '1px solid #d9d9d9',
+                    borderRadius: 8,
+                    minWidth: 180,
+                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03)',
+                  }}
+                >
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#666' }}>
+                    {result.summary.total_rows_compared.toLocaleString()}
+                  </div>
+                  <div style={{ color: 'rgba(0, 0, 0, 0.65)', marginTop: 4, fontSize: 13 }}>Rows Compared</div>
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div style={{
+                marginBottom: 16,
+                padding: 12,
+                backgroundColor: '#fafafa',
+                borderRadius: 6,
+                border: '1px solid #f0f0f0',
+              }}>
+                <Text strong style={{ marginRight: 12 }}>Legend: </Text>
+                <Tag color="green" style={{ marginRight: 8 }}><CheckCircleOutlined /> IDENTICAL</Tag>
+                <Tag color="gold" style={{ marginRight: 8 }}><DiffOutlined /> HAS DIFFS</Tag>
+                <Tag color="red" style={{ marginRight: 8 }}>ERROR</Tag>
+              </div>
+
+              <TableDataResultTable
+                summary={result.summary}
+                tableResults={result.table_results}
+                onViewDetails={handleViewDetails}
+              />
+            </>
           )}
         </div>
       )}
+
+      {/* Detail Modal - Data Diff Viewer */}
+      <Modal
+        title={
+          <Space>
+            <TableOutlined />
+            Data Comparison Details: {selectedTableForDetail?.sourceTable}
+          </Space>
+        }
+        open={detailModalOpen}
+        onCancel={handleDetailModalClose}
+        footer={null}
+        width={1400}
+        centered
+      >
+        {selectedTableForDetail && sourceConnectionId && targetConnectionId && (
+          <DataDiffViewer
+            sourceConnectionId={sourceConnectionId}
+            targetConnectionId={targetConnectionId}
+            sourceTable={selectedTableForDetail.sourceTable}
+            targetTable={selectedTableForDetail.targetTable}
+          />
+        )}
+      </Modal>
     </div>
   );
 };

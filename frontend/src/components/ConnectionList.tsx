@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Table, Button, Space, Modal, Typography, Tag, Empty } from 'antd';
-import { PlusOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Modal, Typography, Tag, Empty, message } from 'antd';
+import { PlusOutlined, DeleteOutlined, EyeOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { Connection } from '../types';
 import { ConnectionForm } from './ConnectionForm';
@@ -11,6 +11,7 @@ interface ConnectionListProps {
   onCreate: (data: any) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onGetTables?: (id: number) => Promise<any>;
+  onTestConnection?: (data: any) => Promise<any>;
   isCreating: boolean;
   isDeleting: boolean;
 }
@@ -21,6 +22,7 @@ export const ConnectionList: React.FC<ConnectionListProps> = ({
   onCreate,
   onDelete,
   onGetTables,
+  onTestConnection,
   isCreating,
   isDeleting,
 }) => {
@@ -28,6 +30,7 @@ export const ConnectionList: React.FC<ConnectionListProps> = ({
   const [tablesModalOpen, setTablesModalOpen] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState<Connection | null>(null);
   const [tables, setTables] = useState<any[]>([]);
+  const [testingId, setTestingId] = useState<number | null>(null);
 
   const handleDelete = (id: number, name: string) => {
     Modal.confirm({
@@ -55,6 +58,26 @@ export const ConnectionList: React.FC<ConnectionListProps> = ({
       setTablesModalOpen(true);
     } catch (error) {
       console.error('Failed to fetch tables:', error);
+    }
+  };
+
+  const handleTestConnection = async (connection: Connection) => {
+    if (!onTestConnection) return;
+
+    setTestingId(connection.id);
+    try {
+      const result = await onTestConnection(connection.id);
+
+      if (result.success) {
+        message.success(`Connection to "${connection.name}" successful!`);
+      } else {
+        message.error(`Connection failed: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Test connection failed:', error);
+      message.error('Failed to test connection');
+    } finally {
+      setTestingId(null);
     }
   };
 
@@ -96,6 +119,14 @@ export const ConnectionList: React.FC<ConnectionListProps> = ({
       render: (_: unknown, record: Connection) => (
         <Space>
           <Button
+            icon={<ThunderboltOutlined />}
+            size="small"
+            loading={testingId === record.id}
+            onClick={() => handleTestConnection(record)}
+          >
+            Test
+          </Button>
+          <Button
             icon={<EyeOutlined />}
             size="small"
             onClick={() => handleViewTables(record)}
@@ -124,6 +155,7 @@ export const ConnectionList: React.FC<ConnectionListProps> = ({
           icon={<PlusOutlined />}
           onClick={() => setIsModalOpen(true)}
           loading={isLoading}
+          size="large"
         >
           Add Connection
         </Button>
@@ -134,7 +166,7 @@ export const ConnectionList: React.FC<ConnectionListProps> = ({
           description="No connections yet"
           image={Empty.PRESENTED_IMAGE_SIMPLE}
         >
-          <Button type="primary" onClick={() => setIsModalOpen(true)}>
+          <Button type="primary" onClick={() => setIsModalOpen(true)} size="large">
             Create Your First Connection
           </Button>
         </Empty>
@@ -145,6 +177,11 @@ export const ConnectionList: React.FC<ConnectionListProps> = ({
           loading={isLoading}
           rowKey="id"
           pagination={{ pageSize: 10 }}
+          style={{
+            backgroundColor: '#ffffff',
+            borderRadius: 8,
+            overflow: 'hidden',
+          }}
         />
       )}
 

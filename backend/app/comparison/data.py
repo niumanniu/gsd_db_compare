@@ -254,11 +254,35 @@ class DataComparator:
             else:
                 raise ValueError(f"Unexpected mode: {actual_mode}")
 
+    def _quote_table_name(self, table_name: str, adapter: Optional[DatabaseAdapter] = None) -> str:
+        """Quote table name for SQL query.
+
+        Args:
+            table_name: Table name (optionally with schema prefix, e.g., 'schema.table')
+            adapter: Database adapter to determine correct quoting syntax
+
+        Returns:
+            Quoted table name
+        """
+        # Determine quote character based on database type
+        quote_char = '`'  # Default to MySQL style
+        if adapter:
+            db_type = adapter.get_database_type()
+            if db_type == 'oracle':
+                # Oracle uses double quotes for quoted identifiers
+                # But often doesn't need quoting if names are uppercase
+                quote_char = '"'
+
+        if '.' in table_name:
+            parts = table_name.split('.')
+            return '.'.join(f'{quote_char}{p}{quote_char}' for p in parts)
+        return f'{quote_char}{table_name}{quote_char}'
+
     def _get_row_count(self, table_name: str) -> int:
         """Get row count for a table.
 
         Args:
-            table_name: Table name
+            table_name: Table name (optionally with schema prefix, e.g., 'schema.table')
 
         Returns:
             Row count
@@ -272,7 +296,8 @@ class DataComparator:
         # Try source adapter first
         cursor = self.source_adapter._connection.cursor()
         try:
-            cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+            quoted_table_name = self._quote_table_name(table_name, self.source_adapter)
+            cursor.execute(f"SELECT COUNT(*) FROM {quoted_table_name}")
             count = cursor.fetchone()[0]
         finally:
             cursor.close()
@@ -423,7 +448,8 @@ class DataComparator:
 
         cursor = adapter._connection.cursor(dictionary=True)
         try:
-            query = f"SELECT * FROM {table_name} ORDER BY {order_by} LIMIT %s OFFSET %s"
+            quoted_table_name = self._quote_table_name(table_name, adapter)
+            query = f"SELECT * FROM {quoted_table_name} ORDER BY {order_by} LIMIT %s OFFSET %s"
             cursor.execute(query, (limit, offset))
             return cursor.fetchall()
         finally:
@@ -716,8 +742,9 @@ class DataComparator:
         try:
             # MySQL modulo sampling: WHERE pk_column % interval = 0
             # This gives roughly 1 out of every interval rows
+            quoted_table_name = self._quote_table_name(table_name, adapter)
             query = f"""
-                SELECT * FROM {table_name}
+                SELECT * FROM {quoted_table_name}
                 WHERE MOD({pk_column}, %s) = 0
                 ORDER BY {pk_column}
                 LIMIT %s

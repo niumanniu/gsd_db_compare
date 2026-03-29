@@ -69,8 +69,20 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
   }
 
   return (
-    <div style={{ marginTop: 24, padding: '16px', background: '#f5f5f5', borderRadius: 8 }}>
-      <div style={{ marginBottom: 12, fontSize: 16, fontWeight: 600 }}>
+    <div style={{
+      marginTop: 24,
+      padding: 20,
+      background: '#ffffff',
+      borderRadius: 8,
+      border: '1px solid #f0f0f0',
+      boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02)',
+    }}>
+      <div style={{
+        marginBottom: 16,
+        fontSize: 15,
+        fontWeight: 600,
+        color: 'rgba(0, 0, 0, 0.88)',
+      }}>
         Export Report
       </div>
       <Space>
@@ -83,7 +95,7 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
           Export HTML
         </Button>
         <Button
-          type="primary"
+          type="default"
           icon={<FileExcelOutlined />}
           onClick={handleExportExcel}
           disabled={!diffResult}

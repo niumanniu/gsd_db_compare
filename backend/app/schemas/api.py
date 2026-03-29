@@ -208,6 +208,8 @@ class DatabaseCompareRequest(BaseModel):
 
     source_connection_id: int
     target_connection_id: int
+    source_schema: Optional[str] = None  # Optional schema (database) to compare - uses connection default if not provided
+    target_schema: Optional[str] = None  # Optional schema (user) to compare - uses connection default if not provided
     exclude_patterns: list[str] = Field(default_factory=list)  # Patterns to exclude (supports wildcards)
 
     def should_exclude_table(self, table_name: str) -> bool:
