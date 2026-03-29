@@ -43,6 +43,17 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
+    def get_schemas(self) -> list[dict]:
+        """List all schemas accessible to the current user.
+
+        Returns:
+            List of dicts with schema_name, owner/status, created_time.
+            - MySQL: schema_name=database name, charset, collation
+            - Oracle: schema_name=username, account_status, created_time
+        """
+        pass
+
+    @abstractmethod
     def get_table_metadata(self, table_name: str) -> dict:
         """Get metadata for a specific table.
 
