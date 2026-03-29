@@ -27,6 +27,14 @@ export interface TableInfo {
   create_time: string | null;
 }
 
+export interface SchemaInfo {
+  schema_name: string;
+  charset?: string | null;      // MySQL: character set
+  collation?: string | null;    // MySQL: collation
+  account_status?: string | null;  // Oracle: account status
+  created_time?: string | null;
+}
+
 export interface SchemaCompareRequest {
   source_connection_id: number;
   source_table: string;
@@ -85,6 +93,13 @@ export type {
   DataSummary,
   FieldDiff,
   RowDiff,
+  // Multi-table comparison types
+  MultiTableCompareRequest,
+  MultiTableCompareResponse,
+  TableCompareSummary,
+  // Database comparison types
+  DatabaseCompareRequest,
+  DatabaseCompareResponse,
 } from './data_compare';
 
 // Re-export scheduled task types
