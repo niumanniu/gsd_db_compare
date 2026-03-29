@@ -117,6 +117,37 @@ class OracleAdapter(DatabaseAdapter):
         cursor.close()
         return tables
 
+    def get_schemas(self) -> list[dict]:
+        """List all schemas (users) accessible to the current user.
+
+        Queries ALL_USERS view.
+
+        Returns:
+            List of dicts with schema_name, account_status, created_time
+        """
+        if not self._connection:
+            self.connect()
+
+        cursor = self._connection.cursor()
+        query = """
+            SELECT
+                USERNAME as schema_name,
+                CREATED as created_time,
+                ACCOUNT_STATUS as account_status
+            FROM ALL_USERS
+            ORDER BY USERNAME
+        """
+        cursor.execute(query)
+        columns = ['schema_name', 'created_time', 'account_status']
+        schemas = []
+        for row in cursor.fetchall():
+            schema_dict = {}
+            for i, col in enumerate(columns):
+                schema_dict[col] = row[i]
+            schemas.append(schema_dict)
+        cursor.close()
+        return schemas
+
     def get_table_metadata(self, table_name: str) -> dict:
         """Get complete metadata for a specific table.
 
