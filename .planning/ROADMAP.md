@@ -46,7 +46,10 @@
   2. Schema dropdown lists only schemas from the selected connection
   3. User can type to search/filter schemas in dropdown
   4. Backend returns schemas via GET /api/connections/{id}/schemas
-**Plans:** TBD
+**Plans:** 2 plans
+**Plans:**
+- [ ] 05-01-PLAN.md — Backend schema enumeration API (get_schemas methods + GET /schemas endpoint)
+- [ ] 05-02-PLAN.md — Frontend schema dropdown UI (state management + searchable dropdowns)
 **UI hint:** yes
 
 ### Phase 6: Multi-Mode Comparison
@@ -83,7 +86,7 @@
 | 2. Multi-Database Support | v1.0 | 4/4 | Complete | 2026-03-28 |
 | 3. Data Comparison Engine | v1.0 | 4/4 | Complete | 2026-03-28 |
 | 4. Advanced Features | v1.0 | 4/4 | Complete | 2026-03-28 |
-| 5. Schema Selection | v1.1 | 0/0 | Not started | - |
+| 5. Schema Selection | v1.1 | 0/2 | Planned | - |
 | 6. Multi-Mode Comparison | v1.1 | 0/0 | Not started | - |
 | 7. Database Hardening | v1.1 | 0/0 | Not started | - |
 
