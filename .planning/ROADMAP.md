@@ -30,7 +30,7 @@
 ### v1.1 (Planned)
 
 - [x] **Phase 5: Schema Selection** - Backend schema enumeration + frontend dropdown for database-level comparison — completed 2026-03-29
-- [ ] **Phase 6: Multi-Table Data Comparison** - Multi-table batch data comparison + Schema-level data comparison
+- [x] **Phase 6: Multi-Table Data Comparison** - Multi-table batch data comparison + Schema-level data comparison — completed 2026-03-29
 - [ ] **Phase 7: Multi-Mode Comparison** - Mode switcher polish + multi-select table UI + atomic state management
 - [ ] **Phase 8: Database Hardening** - Exclude pattern filtering + table count safeguards + comparison preview
 
@@ -102,7 +102,7 @@
 | 3. Data Comparison Engine | v1.0 | 4/4 | Complete | 2026-03-28 |
 | 4. Advanced Features | v1.0 | 4/4 | Complete | 2026-03-28 |
 | 5. Schema Selection | v1.1 | 2/2 | Complete | 2026-03-29 |
-| 6. Multi-Table Data Comparison | v1.1 | 0/0 | Not started | - |
+| 6. Multi-Table Data Comparison | v1.1 | 4/4 | Complete | 2026-03-29 |
 | 7. Multi-Mode Comparison | v1.1 | 0/0 | Not started | - |
 | 8. Database Hardening | v1.1 | 0/0 | Not started | - |
 
@@ -120,12 +120,12 @@
 | SCH-03 | Phase 5 | Complete |
 | SCH-04 | Phase 5 | Complete |
 | SCH-05 | Phase 5 | Complete |
-| MTDC-01 | Phase 6 | Pending |
-| MTDC-02 | Phase 6 | Pending |
-| MTDC-03 | Phase 6 | Pending |
-| MTDC-04 | Phase 6 | Pending |
-| MTDC-05 | Phase 6 | Pending |
-| MTDC-06 | Phase 6 | Pending |
+| MTDC-01 | Phase 6 | Complete |
+| MTDC-02 | Phase 6 | Complete |
+| MTDC-03 | Phase 6 | Complete |
+| MTDC-04 | Phase 6 | Complete |
+| MTDC-05 | Phase 6 | Complete |
+| MTDC-06 | Phase 6 | Complete |
 | MODE-01 | Phase 7 | Pending |
 | MODE-02 | Phase 7 | Pending |
 | MODE-03 | Phase 7 | Pending |
