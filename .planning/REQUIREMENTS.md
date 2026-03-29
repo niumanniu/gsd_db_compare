@@ -58,11 +58,11 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCH-01 | Phase 5 | Pending |
-| SCH-02 | Phase 5 | Pending |
-| SCH-03 | Phase 5 | Pending |
-| SCH-04 | Phase 5 | Pending |
-| SCH-05 | Phase 5 | Pending |
+| SCH-01 | Phase 5 | Complete |
+| SCH-02 | Phase 5 | Complete |
+| SCH-03 | Phase 5 | Complete |
+| SCH-04 | Phase 5 | Complete |
+| SCH-05 | Phase 5 | Complete |
 | MODE-01 | Phase 6 | Pending |
 | MODE-02 | Phase 6 | Pending |
 | MODE-03 | Phase 6 | Pending |

@@ -29,7 +29,7 @@
 
 ### v1.1 (Planned)
 
-- [ ] **Phase 5: Schema Selection** - Backend schema enumeration + frontend dropdown for database-level comparison
+- [x] **Phase 5: Schema Selection** - Backend schema enumeration + frontend dropdown for database-level comparison — completed 2026-03-29
 - [ ] **Phase 6: Multi-Mode Comparison** - Mode switcher polish + multi-select table UI + atomic state management
 - [ ] **Phase 7: Database Hardening** - Exclude pattern filtering + table count safeguards + comparison preview
 
@@ -86,7 +86,7 @@
 | 2. Multi-Database Support | v1.0 | 4/4 | Complete | 2026-03-28 |
 | 3. Data Comparison Engine | v1.0 | 4/4 | Complete | 2026-03-28 |
 | 4. Advanced Features | v1.0 | 4/4 | Complete | 2026-03-28 |
-| 5. Schema Selection | v1.1 | 0/2 | Planned | - |
+| 5. Schema Selection | v1.1 | 2/2 | Complete | 2026-03-29 |
 | 6. Multi-Mode Comparison | v1.1 | 0/0 | Not started | - |
 | 7. Database Hardening | v1.1 | 0/0 | Not started | - |
 

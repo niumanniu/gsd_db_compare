@@ -1,29 +1,29 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: 完善比对功能
-status: roadmap-created
-started_at: 2026-03-29
+milestone_name: milestone
+status: executing
+stopped_at: Phase 5 complete - schema selection implemented
 last_updated: "2026-03-29T00:00:00.000Z"
+last_activity: 2026-03-29
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
 ---
 
 # Project State
 
 ## Current Position
 
-**Status:** Roadmap created - awaiting approval
+**Status:** Phase 5 complete - ready for Phase 6
 
-**Phase:** Not started (roadmap ready)
-**Plan:** -
-**Status:** Roadmap created
-**Last activity:** 2026-03-29 - v1.1 roadmap with 3 phases (5-7)
+**Phase:** 5 (Schema Selection) — COMPLETE
+**Plan:** 2/2 complete
+**Last activity:** 2026-03-29 - Phase 5 complete (SCH-01 to SCH-05 implemented)
 
-**Progress:** 0/3 phases complete
+**Progress:** 1/3 phases complete
 
 ---
 
@@ -33,9 +33,12 @@ progress:
 
 **Goal:** 增强数据库比对功能，支持更细粒度的 schema 选择和多种比对模式
 
-**Target features:**
-- Database level 比对模式增加 schema 下拉框选择
-- 数据库比对支持 single、multi、database level 三种模式
+**Completed in Phase 5:**
+- Database level 比对模式增加 schema 下拉框选择 (SCH-01 to SCH-04)
+- Backend API endpoint /api/connections/{id}/schemas (SCH-05)
+
+**Target features (remaining):**
+- 数据库比对支持 single、multi、database level 三种模式 (Phase 6)
 
 ---
 
@@ -54,6 +57,7 @@ progress:
 ## Accumulated Context
 
 From v1.0 MVP:
+
 - MySQL and Oracle database connections
 - Schema comparison with database-aware type handling
 - Data comparison (full/hash/sample modes)
@@ -74,6 +78,6 @@ From v1.0 MVP:
 ## Session Info
 
 **Last session:** 2026-03-29
-**Stopped at:** Roadmap created - ready for user approval
+**Completed:** Phase 5 (Schema Selection) - 2 plans complete, 5 requirements implemented
 
-**Next action:** User approves roadmap → `/gsd:plan-phase 5`
+**Next action:** `/gsd:plan-phase 6` or `/gsd:discuss-phase 6`
