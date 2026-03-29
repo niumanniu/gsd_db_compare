@@ -106,6 +106,32 @@ class MySQLAdapter(DatabaseAdapter):
         cursor.close()
         return tables
 
+    def get_schemas(self) -> list[dict]:
+        """List all databases (schemas) accessible to the user.
+
+        Queries information_schema.SCHEMATA.
+
+        Returns:
+            List of dicts with schema_name, charset, collation, created_time
+        """
+        if not self._connection:
+            self.connect()
+
+        cursor = self._connection.cursor(dictionary=True)
+        query = """
+            SELECT
+                SCHEMA_NAME as schema_name,
+                DEFAULT_CHARACTER_SET_NAME as charset,
+                DEFAULT_COLLATION_NAME as collation,
+                'N/A' as created_time
+            FROM information_schema.SCHEMATA
+            ORDER BY SCHEMA_NAME
+        """
+        cursor.execute(query)
+        schemas = cursor.fetchall()
+        cursor.close()
+        return schemas
+
     def get_table_metadata(self, table_name: str) -> dict:
         """Get complete metadata for a specific table.
 
