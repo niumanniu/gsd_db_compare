@@ -73,6 +73,10 @@ From v1.0 MVP:
 - Phase 6: State management fixes independent but benefits from Phase 1 table fetching
 - Phase 7 last: Exclude patterns and performance caps require stable schema selection
 
+### Pending Todos
+
+- 表和数据库级别数据比对 - 实现表级别和数据库级别的数据内容比对功能
+
 ---
 
 ## Session Info
