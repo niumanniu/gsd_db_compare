@@ -1,16 +1,19 @@
 import { useState, useCallback, useEffect } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { ConfigProvider, Tabs, message } from 'antd';
+import { ConfigProvider, Tabs, message, Button } from 'antd';
 import { ConnectionList } from './components/ConnectionList';
 import { TableBrowser } from './components/TableBrowser';
 import { SchemaDiffViewer } from './components/SchemaDiffViewer';
 import { ReportViewer } from './components/ReportViewer';
 import { DataDiffViewer } from './components/DataDiffViewer';
+import { MultiTableDiffViewer, DatabaseDiffViewer } from './components/MultiTableDiffViewer';
 import { ScheduledTasksPage } from './components/ScheduledTasksPage';
 import { HistoryPage } from './components/HistoryPage';
 import { useConnections } from './hooks/useConnections';
 import { useComparison } from './hooks/useComparison';
-import type { TableInfo } from './types';
+import type { TableInfo, SchemaInfo } from './types';
+
+type CompareMode = 'single' | 'multi' | 'database';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,7 +26,18 @@ const queryClient = new QueryClient({
 
 function ComparisonView() {
   const { connections, isLoading: connectionsLoading } = useConnections();
-  const { compareSchemas, isComparing, comparisonResult, resetComparison } = useComparison();
+  const {
+    compareSchemas,
+    isComparing,
+    comparisonResult,
+    resetComparison,
+    compareBatch,
+    isComparingBatch,
+    batchComparisonResult,
+    compareDatabase,
+    isComparingDatabase,
+    databaseComparisonResult,
+  } = useComparison();
 
   const [sourceConnectionId, setSourceConnectionId] = useState<number | null>(null);
   const [targetConnectionId, setTargetConnectionId] = useState<number | null>(null);
@@ -32,6 +46,18 @@ function ComparisonView() {
   const [sourceDbInfo, setSourceDbInfo] = useState({ name: '', type: 'mysql' });
   const [targetDbInfo, setTargetDbInfo] = useState({ name: '', type: 'mysql' });
   const [comparisonMode, setComparisonMode] = useState<'schema' | 'data'>('schema');
+  const [compareMode, setCompareMode] = useState<CompareMode>('single');
+
+  // Multi-table selection state
+  const [sourceTablesSelected, setSourceTablesSelected] = useState<string[]>([]);
+  const [targetTablesSelected, setTargetTablesSelected] = useState<string[]>([]);
+
+  // Database compare exclude patterns
+  const [excludePatterns, setExcludePatterns] = useState<string[]>([]);
+
+  // Schema selection state for database-level mode
+  const [sourceSchema, setSourceSchema] = useState<string | null>(null);
+  const [targetSchema, setTargetSchema] = useState<string | null>(null);
 
   // Fetch source tables when connection changes
   const { data: sourceTables = [], isLoading: loadingSourceTables } = useQuery<TableInfo[]>({
@@ -53,6 +79,26 @@ function ComparisonView() {
     enabled: !!targetConnectionId,
   });
 
+  // Fetch source schemas when connection changes (for database-level mode)
+  const { data: sourceSchemas = [], isLoading: loadingSourceSchemas } = useQuery<SchemaInfo[]>({
+    queryKey: ['connection-schemas', sourceConnectionId],
+    queryFn: () =>
+      sourceConnectionId
+        ? fetch(`/api/connections/${sourceConnectionId}/schemas`).then(r => r.json())
+        : Promise.resolve([]),
+    enabled: !!sourceConnectionId,
+  });
+
+  // Fetch target schemas when connection changes (for database-level mode)
+  const { data: targetSchemas = [], isLoading: loadingTargetSchemas } = useQuery<SchemaInfo[]>({
+    queryKey: ['connection-schemas', targetConnectionId],
+    queryFn: () =>
+      targetConnectionId
+        ? fetch(`/api/connections/${targetConnectionId}/schemas`).then(r => r.json())
+        : Promise.resolve([]),
+    enabled: !!targetConnectionId,
+  });
+
   // Update database info when connections change
   useEffect(() => {
     if (connections.length > 0) {
@@ -66,6 +112,28 @@ function ComparisonView() {
       }
     }
   }, [connections, sourceConnectionId, targetConnectionId]);
+
+  // Reset selections when mode changes
+  useEffect(() => {
+    if (compareMode === 'single') {
+      setSourceTablesSelected([]);
+      setTargetTablesSelected([]);
+      setExcludePatterns([]);
+      setSourceSchema(null);
+      setTargetSchema(null);
+    } else if (compareMode === 'multi') {
+      setSourceTable(null);
+      setTargetTable(null);
+      setExcludePatterns([]);
+      setSourceSchema(null);
+      setTargetSchema(null);
+    } else if (compareMode === 'database') {
+      setSourceTable(null);
+      setTargetTable(null);
+      setSourceTablesSelected([]);
+      setTargetTablesSelected([]);
+    }
+  }, [compareMode]);
 
   const handleCompare = useCallback(async () => {
     if (!sourceConnectionId || !targetConnectionId || !sourceTable || !targetTable) {
@@ -87,6 +155,45 @@ function ComparisonView() {
     }
   }, [sourceConnectionId, targetConnectionId, sourceTable, targetTable, compareSchemas]);
 
+  const handleCompareBatch = useCallback(async () => {
+    if (!sourceConnectionId || !targetConnectionId) {
+      message.error('Please select both connections');
+      return;
+    }
+
+    try {
+      await compareBatch({
+        source_connection_id: sourceConnectionId,
+        target_connection_id: targetConnectionId,
+        source_tables: sourceTablesSelected,
+        target_tables: targetTablesSelected,
+      });
+      message.success('Batch comparison complete!');
+    } catch (error) {
+      console.error('Batch comparison failed:', error);
+      message.error('Failed to compare schemas. Please check your connections.');
+    }
+  }, [sourceConnectionId, targetConnectionId, sourceTablesSelected, targetTablesSelected, compareBatch]);
+
+  const handleCompareDatabase = useCallback(async () => {
+    if (!sourceConnectionId || !targetConnectionId) {
+      message.error('Please select both connections');
+      return;
+    }
+
+    try {
+      await compareDatabase({
+        source_connection_id: sourceConnectionId,
+        target_connection_id: targetConnectionId,
+        exclude_patterns: excludePatterns,
+      });
+      message.success('Database comparison complete!');
+    } catch (error) {
+      console.error('Database comparison failed:', error);
+      message.error('Failed to compare databases. Please check your connections.');
+    }
+  }, [sourceConnectionId, targetConnectionId, excludePatterns, compareDatabase]);
+
   const handleReset = useCallback(() => {
     resetComparison();
     setSourceTable(null);
@@ -95,6 +202,7 @@ function ComparisonView() {
   }, [resetComparison]);
 
   const isLoadingTables = loadingSourceTables || loadingTargetTables;
+  const isFetchingSchemas = loadingSourceSchemas || loadingTargetSchemas;
 
   return (
     <div>
@@ -113,88 +221,145 @@ function ComparisonView() {
         style={{ marginBottom: 16 }}
       />
 
-      <TableBrowser
-        connections={connections}
-        sourceConnectionId={sourceConnectionId}
-        targetConnectionId={targetConnectionId}
-        onSourceConnectionChange={(id) => {
-          setSourceConnectionId(id);
-          setSourceTable(null);
-          if (comparisonResult) resetComparison();
-        }}
-        onTargetConnectionChange={(id) => {
-          setTargetConnectionId(id);
-          setTargetTable(null);
-          if (comparisonResult) resetComparison();
-        }}
-        sourceTables={sourceTables}
-        targetTables={targetTables}
-        sourceTable={sourceTable}
-        targetTable={targetTable}
-        onSourceTableChange={setSourceTable}
-        onTargetTableChange={setTargetTable}
-        onCompare={handleCompare}
-        isComparing={isComparing}
-        isLoadingTables={isLoadingTables}
-      />
-
-      {comparisonResult && comparisonMode === 'schema' && (
+      {comparisonMode === 'schema' && (
         <>
-          <div style={{ textAlign: 'center', marginBottom: 16 }}>
-            <ConfigProvider theme={{}} >
-              <button
-                onClick={handleReset}
-                style={{
-                  padding: '8px 16px',
-                  cursor: 'pointer',
-                  backgroundColor: '#fff',
-                  border: '1px solid #d9d9d9',
-                  borderRadius: 4,
-                }}
-              >
-                Compare Different Tables
-              </button>
-            </ConfigProvider>
-          </div>
-          <SchemaDiffViewer
-            diffResult={comparisonResult}
-            sourceDbName={sourceDbInfo.name}
-            targetDbName={targetDbInfo.name}
-            sourceDbType={sourceDbInfo.type}
-            targetDbType={targetDbInfo.type}
+          <TableBrowser
+            connections={connections}
+            sourceConnectionId={sourceConnectionId}
+            targetConnectionId={targetConnectionId}
+            onSourceConnectionChange={(id) => {
+              setSourceConnectionId(id);
+              setSourceTable(null);
+              if (comparisonResult) resetComparison();
+            }}
+            onTargetConnectionChange={(id) => {
+              setTargetConnectionId(id);
+              setTargetTable(null);
+              if (comparisonResult) resetComparison();
+            }}
+            sourceTables={sourceTables}
+            targetTables={targetTables}
+            sourceTable={sourceTable}
+            targetTable={targetTable}
+            onSourceTableChange={setSourceTable}
+            onTargetTableChange={setTargetTable}
+            onCompare={handleCompare}
+            isComparing={isComparing}
+            isLoadingTables={isLoadingTables}
+            // Multi-table and database comparison props
+            compareMode={compareMode}
+            onCompareModeChange={setCompareMode}
+            sourceTablesSelected={sourceTablesSelected}
+            targetTablesSelected={targetTablesSelected}
+            onSourceTablesSelectedChange={setSourceTablesSelected}
+            onTargetTablesSelectedChange={setTargetTablesSelected}
+            onCompareBatch={handleCompareBatch}
+            isComparingBatch={isComparingBatch}
+            excludePatterns={excludePatterns}
+            onExcludePatternsChange={setExcludePatterns}
+            onCompareDatabase={handleCompareDatabase}
+            isComparingDatabase={isComparingDatabase}
+            // Schema selection props
+            sourceSchema={sourceSchema}
+            targetSchema={targetSchema}
+            onSourceSchemaChange={setSourceSchema}
+            onTargetSchemaChange={setTargetSchema}
+            sourceSchemas={sourceSchemas}
+            targetSchemas={targetSchemas}
+            isFetchingSchemas={isFetchingSchemas}
           />
-          <ReportViewer
-            diffResult={comparisonResult}
-            sourceDb={sourceDbInfo.name}
-            targetDb={targetDbInfo.name}
-          />
+
+          {/* Single Table Comparison Result */}
+          {comparisonResult && compareMode === 'single' && (
+            <>
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <Button
+                  onClick={handleReset}
+                  size="middle"
+                  style={{
+                    padding: '6px 16px',
+                    borderRadius: 6,
+                  }}
+                >
+                  Compare Different Tables
+                </Button>
+              </div>
+              <SchemaDiffViewer
+                diffResult={comparisonResult}
+                sourceDbName={sourceDbInfo.name}
+                targetDbName={targetDbInfo.name}
+                sourceDbType={sourceDbInfo.type}
+                targetDbType={targetDbInfo.type}
+              />
+              <ReportViewer
+                diffResult={comparisonResult}
+                sourceDb={sourceDbInfo.name}
+                targetDb={targetDbInfo.name}
+              />
+            </>
+          )}
+
+          {/* Multi-Table Comparison Result */}
+          {batchComparisonResult && compareMode === 'multi' && (
+            <MultiTableDiffViewer result={batchComparisonResult} />
+          )}
+
+          {/* Database Comparison Result */}
+          {databaseComparisonResult && compareMode === 'database' && (
+            <DatabaseDiffViewer result={databaseComparisonResult} />
+          )}
         </>
       )}
 
-      {comparisonResult && comparisonMode === 'data' && (
+      {comparisonMode === 'data' && (
         <>
-          <div style={{ textAlign: 'center', marginBottom: 16 }}>
-            <ConfigProvider theme={{}} >
-              <button
-                onClick={handleReset}
-                style={{
-                  padding: '8px 16px',
-                  cursor: 'pointer',
-                  backgroundColor: '#fff',
-                  border: '1px solid #d9d9d9',
-                  borderRadius: 4,
-                }}
-              >
-                Compare Different Tables
-              </button>
-            </ConfigProvider>
-          </div>
-          <DataDiffViewer
-            sourceConnectionId={sourceConnectionId!}
-            targetConnectionId={targetConnectionId!}
-            sourceTable={sourceTable!}
-            targetTable={targetTable!}
+          <TableBrowser
+            connections={connections}
+            sourceConnectionId={sourceConnectionId}
+            targetConnectionId={targetConnectionId}
+            onSourceConnectionChange={(id) => {
+              setSourceConnectionId(id);
+              setSourceTable(null);
+              if (comparisonResult) resetComparison();
+            }}
+            onTargetConnectionChange={(id) => {
+              setTargetConnectionId(id);
+              setTargetTable(null);
+              if (comparisonResult) resetComparison();
+            }}
+            sourceTables={sourceTables}
+            targetTables={targetTables}
+            sourceTable={sourceTable}
+            targetTable={targetTable}
+            onSourceTableChange={setSourceTable}
+            onTargetTableChange={setTargetTable}
+            onCompare={handleCompare}
+            isComparing={isComparing}
+            isLoadingTables={isLoadingTables}
           />
+
+          {comparisonResult && (
+            <>
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <Button
+                  onClick={handleReset}
+                  size="middle"
+                  style={{
+                    padding: '6px 16px',
+                    borderRadius: 6,
+                  }}
+                >
+                  Compare Different Tables
+                </Button>
+              </div>
+              <DataDiffViewer
+                sourceConnectionId={sourceConnectionId!}
+                targetConnectionId={targetConnectionId!}
+                sourceTable={sourceTable!}
+                targetTable={targetTable!}
+              />
+            </>
+          )}
         </>
       )}
     </div>
@@ -208,6 +373,7 @@ function ConnectionsView() {
     createConnection,
     deleteConnection,
     getTables,
+    testConnection,
     isCreating,
     isDeleting,
   } = useConnections();
@@ -220,6 +386,7 @@ function ConnectionsView() {
         onCreate={async (data) => { await createConnection(data); }}
         onDelete={deleteConnection}
         onGetTables={getTables}
+        onTestConnection={testConnection}
         isCreating={isCreating}
         isDeleting={isDeleting}
       />
@@ -251,7 +418,19 @@ function AppContent() {
     },
   ];
 
-  return <Tabs defaultActiveKey="compare" items={items} size="large" />;
+  return (
+    <Tabs
+      defaultActiveKey="compare"
+      items={items}
+      size="large"
+      style={{
+        backgroundColor: '#ffffff',
+        padding: 24,
+        borderRadius: 8,
+        boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02)',
+      }}
+    />
+  );
 }
 
 function App() {
@@ -260,12 +439,48 @@ function App() {
       <ConfigProvider
         theme={{
           token: {
-            colorPrimary: '#1890ff',
+            colorPrimary: '#1677ff',
+            colorBgLayout: '#f5f7fa',
+            colorBgContainer: '#ffffff',
+            colorBgElevated: '#ffffff',
+            borderRadius: 6,
+            fontSize: 14,
+            colorText: 'rgba(0, 0, 0, 0.88)',
+            colorTextSecondary: 'rgba(0, 0, 0, 0.65)',
+            colorTextTertiary: 'rgba(0, 0, 0, 0.45)',
+            colorBorder: '#d9d9d9',
+            colorFillContent: '#f5f5f5',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02)',
+            boxShadowSecondary: '0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 9px 28px 8px rgba(0, 0, 0, 0.05)',
+          },
+          components: {
+            Tabs: {
+              colorBgContainer: '#ffffff',
+              colorText: 'rgba(0, 0, 0, 0.88)',
+              colorTextHeading: 'rgba(0, 0, 0, 0.88)',
+            },
+            Table: {
+              colorBgContainer: '#ffffff',
+              colorText: 'rgba(0, 0, 0, 0.88)',
+              colorTextSecondary: 'rgba(0, 0, 0, 0.65)',
+            },
+            Card: {
+              colorBgContainer: '#ffffff',
+              colorText: 'rgba(0, 0, 0, 0.88)',
+            },
           },
         }}
       >
-        <div style={{ padding: 24, maxWidth: 1400, margin: '0 auto' }}>
-          <h1 style={{ marginBottom: 24 }}>DB Compare - Schema Comparison Tool</h1>
+        <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>
+          <h1 style={{
+            marginBottom: 24,
+            fontSize: '24px',
+            fontWeight: 600,
+            color: 'rgba(0, 0, 0, 0.88)',
+            letterSpacing: '-0.02em',
+          }}>
+            DB Compare
+          </h1>
           <AppContent />
         </div>
       </ConfigProvider>
