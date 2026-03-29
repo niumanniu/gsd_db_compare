@@ -45,7 +45,7 @@ export const ComparisonProgress: React.FC<ComparisonProgressProps> = ({
         <Progress
           percent={percentage}
           status={getAntStatus()}
-          format={(pct) => `${pct.toFixed(0)}%`}
+          format={(pct = 0) => `${pct.toFixed(0)}%`}
           strokeColor={{
             '0%': '#1890ff',
             '100%': '#52c41a',

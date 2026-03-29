@@ -9,11 +9,14 @@ import { DataDiffViewer } from './components/DataDiffViewer';
 import { MultiTableDiffViewer, DatabaseDiffViewer } from './components/MultiTableDiffViewer';
 import { ScheduledTasksPage } from './components/ScheduledTasksPage';
 import { HistoryPage } from './components/HistoryPage';
+import { MultiTableDataCompareForm } from './components/MultiTableDataCompareForm';
+import { SchemaDataCompareForm } from './components/SchemaDataCompareForm';
 import { useConnections } from './hooks/useConnections';
 import { useComparison } from './hooks/useComparison';
 import type { TableInfo, SchemaInfo } from './types';
 
 type CompareMode = 'single' | 'multi' | 'database';
+type DataCompareMode = 'single-table' | 'multi-table' | 'schema-level';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -47,6 +50,9 @@ function ComparisonView() {
   const [targetDbInfo, setTargetDbInfo] = useState({ name: '', type: 'mysql' });
   const [comparisonMode, setComparisonMode] = useState<'schema' | 'data'>('schema');
   const [compareMode, setCompareMode] = useState<CompareMode>('single');
+
+  // Data comparison mode
+  const [dataCompareMode, setDataCompareMode] = useState<DataCompareMode>('single-table');
 
   // Multi-table selection state
   const [sourceTablesSelected, setSourceTablesSelected] = useState<string[]>([]);
@@ -313,52 +319,86 @@ function ComparisonView() {
 
       {comparisonMode === 'data' && (
         <>
-          <TableBrowser
-            connections={connections}
-            sourceConnectionId={sourceConnectionId}
-            targetConnectionId={targetConnectionId}
-            onSourceConnectionChange={(id) => {
-              setSourceConnectionId(id);
-              setSourceTable(null);
-              if (comparisonResult) resetComparison();
+          {/* Data Comparison Mode Switcher */}
+          <Tabs
+            activeKey={dataCompareMode}
+            onChange={(key) => {
+              setDataCompareMode(key as DataCompareMode);
             }}
-            onTargetConnectionChange={(id) => {
-              setTargetConnectionId(id);
-              setTargetTable(null);
-              if (comparisonResult) resetComparison();
-            }}
-            sourceTables={sourceTables}
-            targetTables={targetTables}
-            sourceTable={sourceTable}
-            targetTable={targetTable}
-            onSourceTableChange={setSourceTable}
-            onTargetTableChange={setTargetTable}
-            onCompare={handleCompare}
-            isComparing={isComparing}
-            isLoadingTables={isLoadingTables}
+            items={[
+              { key: 'single-table', label: 'Single Table' },
+              { key: 'multi-table', label: 'Multi-Table' },
+              { key: 'schema-level', label: 'Schema-Level' },
+            ]}
+            size="small"
+            style={{ marginBottom: 16 }}
           />
 
-          {comparisonResult && (
+          {/* Single Table Data Comparison */}
+          {dataCompareMode === 'single-table' && (
             <>
-              <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                <Button
-                  onClick={handleReset}
-                  size="middle"
-                  style={{
-                    padding: '6px 16px',
-                    borderRadius: 6,
-                  }}
-                >
-                  Compare Different Tables
-                </Button>
-              </div>
-              <DataDiffViewer
-                sourceConnectionId={sourceConnectionId!}
-                targetConnectionId={targetConnectionId!}
-                sourceTable={sourceTable!}
-                targetTable={targetTable!}
+              <TableBrowser
+                connections={connections}
+                sourceConnectionId={sourceConnectionId}
+                targetConnectionId={targetConnectionId}
+                onSourceConnectionChange={(id) => {
+                  setSourceConnectionId(id);
+                  setSourceTable(null);
+                  if (comparisonResult) resetComparison();
+                }}
+                onTargetConnectionChange={(id) => {
+                  setTargetConnectionId(id);
+                  setTargetTable(null);
+                  if (comparisonResult) resetComparison();
+                }}
+                sourceTables={sourceTables}
+                targetTables={targetTables}
+                sourceTable={sourceTable}
+                targetTable={targetTable}
+                onSourceTableChange={setSourceTable}
+                onTargetTableChange={setTargetTable}
+                onCompare={handleCompare}
+                isComparing={isComparing}
+                isLoadingTables={isLoadingTables}
               />
+
+              {comparisonResult && (
+                <>
+                  <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                    <Button
+                      onClick={handleReset}
+                      size="middle"
+                      style={{
+                        padding: '6px 16px',
+                        borderRadius: 6,
+                      }}
+                    >
+                      Compare Different Tables
+                    </Button>
+                  </div>
+                  <DataDiffViewer
+                    sourceConnectionId={sourceConnectionId!}
+                    targetConnectionId={targetConnectionId!}
+                    sourceTable={sourceTable!}
+                    targetTable={targetTable!}
+                  />
+                </>
+              )}
             </>
+          )}
+
+          {/* Multi-Table Data Comparison */}
+          {dataCompareMode === 'multi-table' && (
+            <MultiTableDataCompareForm
+              connections={connections}
+            />
+          )}
+
+          {/* Schema-Level Data Comparison */}
+          {dataCompareMode === 'schema-level' && (
+            <SchemaDataCompareForm
+              connections={connections}
+            />
           )}
         </>
       )}
