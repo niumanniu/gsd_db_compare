@@ -4,7 +4,7 @@ milestone: v1.1
 milestone_name: milestone
 status: executing
 stopped_at: Phase 6 complete - Multi-Table Data Comparison implemented
-last_updated: "2026-03-29T03:00:00.000Z"
+last_updated: "2026-03-29"
 last_activity: 2026-03-29
 progress:
   total_phases: 4
@@ -21,7 +21,7 @@ progress:
 
 **Phase:** 6 (Multi-Table Data Comparison) — COMPLETE
 **Plan:** 4/4 complete
-**Last activity:** 2026-03-29 - Phase 6 complete (MTDC-01 to MTDC-06 implemented)
+**Last activity:** 2026-03-29 - Database comparison schema selection fix shipped
 
 **Progress:** 2/4 phases complete
 
@@ -41,6 +41,9 @@ progress:
 - Multi-table data comparison API and UI (MTDC-01 to MTDC-04)
 - Schema-level data comparison with exclude patterns (MTDC-05 to MTDC-06)
 - Frontend components: MultiTableDataCompareForm, SchemaDataCompareForm, TableDataResultTable, ComparisonProgress
+
+**Hotfix shipped:**
+- Fixed database comparison schema selection - API now uses user-selected schemas instead of connection default databases
 
 **Target features (remaining):**
 - Mode switcher polish + multi-select table UI + atomic state management (Phase 7)
